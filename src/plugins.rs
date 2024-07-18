@@ -1,24 +1,24 @@
 use std::{collections::VecDeque, future::Future, path::Path};
 
 use serde_json::{Map, Value};
-use tokio::fs::read_to_string;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Plugin {
-    plugin_type: String,
-    args: Option<Map<String, Value>>,
-    capabilities: Option<Map<String, Value>>,
-    plugin_options: Map<String, Value>,
-}
+use tokio::fs::{read_to_string, write};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginList {
-    cni_version: String,
-    cni_versions: Option<Vec<String>>,
-    name: String,
-    disable_check: bool,
-    disable_gc: bool,
-    plugins: Vec<Plugin>,
+    pub cni_version: String,
+    pub cni_versions: Option<Vec<String>>,
+    pub name: String,
+    pub disable_check: bool,
+    pub disable_gc: bool,
+    pub plugins: Vec<Plugin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plugin {
+    pub plugin_type: String,
+    pub args: Option<Map<String, Value>>,
+    pub capabilities: Option<Map<String, Value>>,
+    pub plugin_options: Map<String, Value>,
 }
 
 #[derive(Debug)]
@@ -32,7 +32,11 @@ pub enum CniDeserializationError {
 }
 
 #[derive(Debug)]
-pub enum CniSerializationError {}
+pub enum CniSerializationError {
+    FileError(tokio::io::Error),
+    SerdeError(serde_json::Error),
+    OverlappingKey,
+}
 
 pub trait CniDeserializable: Sized {
     fn from_file(path: impl AsRef<Path>) -> impl Future<Output = Result<Self, CniDeserializationError>> {
@@ -53,10 +57,20 @@ pub trait CniDeserializable: Sized {
     fn from_json_value(json_value: Value) -> Result<Self, CniDeserializationError>;
 }
 
-pub trait CniSerializable {
-    fn to_file(self, path: impl AsRef<Path>) -> impl Future<Output = Result<(), CniSerializationError>>;
+pub trait CniSerializable: Sized {
+    fn to_file(self, path: impl AsRef<Path>) -> impl Future<Output = Result<(), CniSerializationError>> {
+        async move {
+            let content = self.to_string()?;
+            write(path, content)
+                .await
+                .map_err(|err| CniSerializationError::FileError(err))
+        }
+    }
 
-    fn to_string(self) -> Result<String, CniSerializationError>;
+    fn to_string(self) -> Result<String, CniSerializationError> {
+        let json_value = self.to_json_value()?;
+        serde_json::to_string(&json_value).map_err(|err| CniSerializationError::SerdeError(err))
+    }
 
     fn to_json_value(self) -> Result<Value, CniSerializationError>;
 }
@@ -174,5 +188,55 @@ impl CniDeserializable for Plugin {
             capabilities,
             plugin_options,
         })
+    }
+}
+
+impl CniSerializable for PluginList {
+    fn to_json_value(self) -> Result<Value, CniSerializationError> {
+        let mut map = Map::new();
+
+        map.insert("cniVersion".into(), Value::String(self.cni_version));
+        if let Some(cni_versions) = self.cni_versions {
+            map.insert(
+                "cniVersions".into(),
+                Value::Array(cni_versions.into_iter().map(|v| Value::String(v)).collect()),
+            );
+        }
+
+        map.insert("name".into(), Value::String(self.name));
+        map.insert("disableCheck".into(), Value::Bool(self.disable_check));
+        map.insert("disableGC".into(), Value::Bool(self.disable_gc));
+
+        let mut plugins: Vec<Value> = Vec::with_capacity(self.plugins.len());
+        for plugin in self.plugins.into_iter() {
+            plugins.push(plugin.to_json_value()?);
+        }
+        map.insert("plugins".into(), Value::Array(plugins));
+
+        Ok(Value::Object(map))
+    }
+}
+
+impl CniSerializable for Plugin {
+    fn to_json_value(self) -> Result<Value, CniSerializationError> {
+        let mut map = Map::new();
+
+        map.insert("type".into(), Value::String(self.plugin_type));
+        if let Some(args) = self.args {
+            map.insert("args".into(), Value::Object(args));
+        }
+        if let Some(capabilities) = self.capabilities {
+            map.insert("capabilities".into(), Value::Object(capabilities));
+        }
+
+        for (key, value) in self.plugin_options {
+            if key == "args" || key == "capabilities" || key == "type" {
+                return Err(CniSerializationError::OverlappingKey);
+            }
+
+            map.insert(key, value);
+        }
+
+        Ok(Value::Object(map))
     }
 }
