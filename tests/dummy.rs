@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use async_cni_rt::data::PluginList;
+use async_cni_rt::plugins::{CniDeserializable, PluginList};
 
 #[tokio::test]
 async fn t() {

@@ -1,0 +1,178 @@
+use std::{collections::VecDeque, future::Future, path::Path};
+
+use serde_json::{Map, Value};
+use tokio::fs::read_to_string;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plugin {
+    plugin_type: String,
+    args: Option<Map<String, Value>>,
+    capabilities: Option<Map<String, Value>>,
+    plugin_options: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginList {
+    cni_version: String,
+    cni_versions: Option<Vec<String>>,
+    name: String,
+    disable_check: bool,
+    disable_gc: bool,
+    plugins: Vec<Plugin>,
+}
+
+#[derive(Debug)]
+pub enum CniDeserializationError {
+    FileError(tokio::io::Error),
+    SerdeError(serde_json::Error),
+    RootIsNotObject,
+    MissingKey,
+    KeyOfWrongType,
+    EmptyArray,
+}
+
+#[derive(Debug)]
+pub enum CniSerializationError {}
+
+pub trait CniDeserializable: Sized {
+    fn from_file(path: impl AsRef<Path>) -> impl Future<Output = Result<Self, CniDeserializationError>> {
+        async move {
+            let content = read_to_string(path)
+                .await
+                .map_err(|err| CniDeserializationError::FileError(err))?;
+            Self::from_string(content)
+        }
+    }
+
+    fn from_string(content: impl AsRef<str>) -> Result<Self, CniDeserializationError> {
+        let json_value: Value =
+            serde_json::from_str(content.as_ref()).map_err(|err| CniDeserializationError::SerdeError(err))?;
+        Self::from_json_value(json_value)
+    }
+
+    fn from_json_value(json_value: Value) -> Result<Self, CniDeserializationError>;
+}
+
+pub trait CniSerializable {
+    fn to_file(self, path: impl AsRef<Path>) -> impl Future<Output = Result<(), CniSerializationError>>;
+
+    fn to_string(self) -> Result<String, CniSerializationError>;
+
+    fn to_json_value(self) -> Result<Value, CniSerializationError>;
+}
+
+impl CniDeserializable for PluginList {
+    fn from_json_value(mut json_value: Value) -> Result<Self, CniDeserializationError> {
+        let obj = json_value
+            .as_object_mut()
+            .ok_or(CniDeserializationError::RootIsNotObject)?;
+        let cni_version = obj
+            .remove("cniVersion")
+            .ok_or(CniDeserializationError::MissingKey)?
+            .as_str()
+            .ok_or(CniDeserializationError::KeyOfWrongType)?
+            .to_string();
+        let cni_versions = match obj.remove("cniVersions") {
+            Some(list) => {
+                let parsed_list = list
+                    .as_array()
+                    .ok_or(CniDeserializationError::KeyOfWrongType)?
+                    .iter()
+                    .map(|val| {
+                        val.as_str()
+                            .expect("CNI version inside list was not a string")
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                if parsed_list.is_empty() {
+                    return Err(CniDeserializationError::EmptyArray);
+                }
+                Some(parsed_list)
+            }
+            None => None,
+        };
+
+        let name = obj
+            .remove("name")
+            .ok_or(CniDeserializationError::MissingKey)?
+            .as_str()
+            .ok_or(CniDeserializationError::KeyOfWrongType)?
+            .to_string();
+        let disable_check = match obj.remove("disableCheck") {
+            Some(val) => val.as_bool().ok_or(CniDeserializationError::KeyOfWrongType)?,
+            None => false,
+        };
+        let disable_gc = match obj.remove("disableGC") {
+            Some(val) => val.as_bool().ok_or(CniDeserializationError::KeyOfWrongType)?,
+            None => false,
+        };
+
+        let plugin_jsons = obj.remove("plugins").ok_or(CniDeserializationError::MissingKey)?;
+        let mut plugin_jsons = match plugin_jsons {
+            Value::Array(array) => VecDeque::from(array),
+            _ => return Err(CniDeserializationError::KeyOfWrongType),
+        };
+        if plugin_jsons.is_empty() {
+            return Err(CniDeserializationError::EmptyArray);
+        }
+
+        let mut plugins: Vec<Plugin> = Vec::with_capacity(plugin_jsons.len());
+        while let Some(plugin_json) = plugin_jsons.pop_front() {
+            plugins.push(Plugin::from_json_value(plugin_json)?);
+        }
+
+        Ok(PluginList {
+            cni_version,
+            cni_versions,
+            name,
+            disable_check,
+            disable_gc,
+            plugins,
+        })
+    }
+}
+
+impl CniDeserializable for Plugin {
+    fn from_json_value(json_value: Value) -> Result<Self, CniDeserializationError> {
+        let obj = match json_value {
+            Value::Object(x) => x,
+            _ => return Err(CniDeserializationError::KeyOfWrongType),
+        };
+
+        let mut plugin_type_option: Option<String> = None;
+        let mut args: Option<Map<String, Value>> = None;
+        let mut capabilities: Option<Map<String, Value>> = None;
+        let mut plugin_options: Map<String, Value> = Map::new();
+
+        for (key, value) in obj.into_iter() {
+            match key.as_str() {
+                "type" => {
+                    plugin_type_option = Some(value.as_str().ok_or(CniDeserializationError::KeyOfWrongType)?.into());
+                }
+                "args" => {
+                    args = Some(match value {
+                        Value::Object(x) => x,
+                        _ => return Err(CniDeserializationError::KeyOfWrongType),
+                    })
+                }
+                "capabilities" => {
+                    capabilities = Some(match value {
+                        Value::Object(x) => x,
+                        _ => return Err(CniDeserializationError::KeyOfWrongType),
+                    });
+                }
+                _ => {
+                    plugin_options.insert(key, value);
+                }
+            }
+        }
+
+        let plugin_type = plugin_type_option.ok_or(CniDeserializationError::MissingKey)?;
+        Ok(Plugin {
+            plugin_type,
+            args,
+            capabilities,
+            plugin_options,
+        })
+    }
+}
