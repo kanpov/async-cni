@@ -66,7 +66,7 @@ pub struct CniAttachmentRoute {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentDns {
-    pub nameservers: Vec<String>,
+    pub nameservers: Option<Vec<String>>,
     pub domain: Option<String>,
     pub search: Option<Vec<String>>,
     pub options: Option<Vec<String>>,
@@ -102,7 +102,9 @@ pub enum CniValidationError {
 pub struct CniContainerId(String);
 
 impl CniContainerId {
-    pub fn new(container_id: String) -> Result<CniContainerId, CniValidationError> {
+    pub fn new(container_id: impl Into<String>) -> Result<CniContainerId, CniValidationError> {
+        let container_id = container_id.into();
+
         if container_id.trim().is_empty() {
             return Err(CniValidationError::IsEmptyOrBlank);
         }
@@ -136,10 +138,12 @@ impl From<CniContainerId> for String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CniNetworkName(String);
+pub struct CniName(String);
 
-impl CniNetworkName {
-    pub fn new(network_name: String) -> Result<CniNetworkName, CniValidationError> {
+impl CniName {
+    pub fn new(network_name: impl Into<String>) -> Result<CniName, CniValidationError> {
+        let network_name = network_name.into();
+
         if network_name.trim().is_empty() {
             return Err(CniValidationError::IsEmptyOrBlank);
         }
@@ -151,18 +155,18 @@ impl CniNetworkName {
             return Err(CniValidationError::ContainsForbiddenCharacter);
         }
 
-        Ok(CniNetworkName(network_name))
+        Ok(CniName(network_name))
     }
 }
 
-impl AsRef<str> for CniNetworkName {
+impl AsRef<str> for CniName {
     fn as_ref(&self) -> &str {
         self.0.as_str()
     }
 }
 
-impl From<CniNetworkName> for String {
-    fn from(value: CniNetworkName) -> Self {
+impl From<CniName> for String {
+    fn from(value: CniName) -> Self {
         value.0
     }
 }
@@ -173,7 +177,9 @@ pub struct CniInterfaceName(String);
 static IFNAME_MAX_LENGTH: usize = 15;
 
 impl CniInterfaceName {
-    pub fn new(interface_name: String) -> Result<CniInterfaceName, CniValidationError> {
+    pub fn new(interface_name: impl Into<String>) -> Result<CniInterfaceName, CniValidationError> {
+        let interface_name = interface_name.into();
+
         if interface_name.trim().is_empty() {
             return Err(CniValidationError::IsEmptyOrBlank);
         }

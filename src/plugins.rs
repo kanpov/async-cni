@@ -7,11 +7,13 @@ use tokio::{
     io,
 };
 
+use crate::types::{CniName, CniValidationError};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniPluginList {
     pub cni_version: String,
     pub cni_versions: Option<Vec<String>>,
-    pub name: String,
+    pub name: CniName,
     pub disable_check: bool,
     pub disable_gc: bool,
     pub plugins: Vec<CniPlugin>,
@@ -33,6 +35,7 @@ pub enum CniDeserializationError {
     MissingKey,
     KeyOfWrongType,
     EmptyArray,
+    MalformedName(CniValidationError),
 }
 
 #[derive(Debug)]
@@ -104,12 +107,14 @@ impl CniDeserializable for CniPluginList {
             None => None,
         };
 
-        let name = obj
-            .remove("name")
-            .ok_or(CniDeserializationError::MissingKey)?
-            .as_str()
-            .ok_or(CniDeserializationError::KeyOfWrongType)?
-            .to_string();
+        let name = CniName::new(
+            obj.remove("name")
+                .ok_or(CniDeserializationError::MissingKey)?
+                .as_str()
+                .ok_or(CniDeserializationError::KeyOfWrongType)?,
+        )
+        .map_err(CniDeserializationError::MalformedName)?;
+
         let disable_check = match obj.remove("disableCheck") {
             Some(val) => val.as_bool().ok_or(CniDeserializationError::KeyOfWrongType)?,
             None => false,
@@ -201,7 +206,7 @@ impl CniSerializable for CniPluginList {
             );
         }
 
-        map.insert("name".into(), Value::String(self.name));
+        map.insert("name".into(), Value::String(self.name.into()));
         map.insert("disableCheck".into(), Value::Bool(self.disable_check));
         map.insert("disableGC".into(), Value::Bool(self.disable_gc));
 

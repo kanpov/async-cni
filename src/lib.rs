@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use invocation::{CniInvocation, CniInvocationArguments, CniInvocationError, CniInvocationOutput, CniInvocationTarget};
+use invocation::{
+    CniInvocationArguments, CniInvocationError, CniInvocationResult, CniInvocationTarget, CniInvoker, CniLocator,
+};
 use plugins::CniPlugin;
 use serde_json::Value;
 use types::{CniAttachment, CniError, CniOperation, CniVersionObject};
@@ -10,28 +12,52 @@ pub mod plugins;
 pub mod types;
 
 /// Perform a CNI invocation, moving in the invocation. This is the main function of tokio-cni.
-pub async fn invoke<'a>(invocation: CniInvocation<'a>) -> Result<CniInvocationOutput, CniInvocationError> {
-    let mut invocation_output = CniInvocationOutput {
+pub async fn invoke(
+    operation: CniOperation,
+    invocation_arguments: &CniInvocationArguments,
+    invocation_target: &CniInvocationTarget<'_>,
+    invoker: &impl CniInvoker,
+    locator: &impl CniLocator,
+) -> Result<CniInvocationResult, CniInvocationError> {
+    let mut invocation_output = CniInvocationResult {
         attachment: None,
         version_objects: Vec::new(),
     };
 
-    match invocation.target {
+    match invocation_target {
         CniInvocationTarget::Plugin {
             plugin,
             cni_version: _,
-            network_name: _,
+            name: _,
         } => {
-            invoke_plugin(&invocation, plugin, &mut invocation_output).await?;
+            invoke_plugin(
+                operation,
+                plugin,
+                &invocation_arguments,
+                &invocation_target,
+                &mut invocation_output,
+                invoker,
+                locator,
+            )
+            .await?;
         }
         CniInvocationTarget::PluginList(plugin_list) => {
-            let plugin_iter = match invocation.operation {
+            let plugin_iter = match operation {
                 CniOperation::Delete => plugin_list.plugins.iter().rev().collect::<Vec<_>>(),
                 _ => plugin_list.plugins.iter().collect::<Vec<_>>(),
             };
 
             for plugin in plugin_iter {
-                invoke_plugin(&invocation, plugin, &mut invocation_output).await?;
+                invoke_plugin(
+                    operation,
+                    plugin,
+                    &invocation_arguments,
+                    &invocation_target,
+                    &mut invocation_output,
+                    invoker,
+                    locator,
+                )
+                .await?;
             }
         }
     }
@@ -40,11 +66,15 @@ pub async fn invoke<'a>(invocation: CniInvocation<'a>) -> Result<CniInvocationOu
 }
 
 async fn invoke_plugin(
-    invocation: &CniInvocation<'_>,
+    operation: CniOperation,
     plugin: &CniPlugin,
-    invocation_output: &mut CniInvocationOutput,
+    invocation_arguments: &CniInvocationArguments,
+    invocation_target: &CniInvocationTarget<'_>,
+    invocation_output: &mut CniInvocationResult,
+    invoker: &impl CniInvoker,
+    locator: &impl CniLocator,
 ) -> Result<(), CniInvocationError> {
-    let location = match invocation.locator.locate(&plugin.plugin_type).await {
+    let location = match locator.locate(&plugin.plugin_type).await {
         Some(location) => location,
         None => {
             return Err(CniInvocationError::PluginNotFoundByLocator);
@@ -52,21 +82,21 @@ async fn invoke_plugin(
     };
 
     let mut environment: HashMap<String, String> = HashMap::new();
-    environment.insert("CNI_COMMAND".into(), invocation.operation.as_ref().into());
+    environment.insert("CNI_COMMAND".into(), operation.as_ref().into());
 
-    if let Some(container_id) = &invocation.arguments.container_id {
+    if let Some(container_id) = &invocation_arguments.container_id {
         environment.insert("CNI_CONTAINERID".into(), container_id.as_ref().into());
     }
 
-    if let Some(net_ns) = &invocation.arguments.net_ns {
+    if let Some(net_ns) = &invocation_arguments.net_ns {
         environment.insert("CNI_NETNS".into(), net_ns.into());
     }
 
-    if let Some(interface_name) = &invocation.arguments.interface_name {
+    if let Some(interface_name) = &invocation_arguments.interface_name {
         environment.insert("CNI_IFNAME".into(), interface_name.as_ref().into());
     }
 
-    if let Some(paths) = &invocation.arguments.paths {
+    if let Some(paths) = &invocation_arguments.paths {
         if !paths.is_empty() {
             let path_str = paths
                 .iter()
@@ -79,12 +109,11 @@ async fn invoke_plugin(
 
     let stdin = derive_stdin(
         plugin,
-        &invocation.target,
+        &invocation_arguments,
+        invocation_target,
         invocation_output.attachment.as_ref(),
-        &invocation.arguments,
     )?;
-    let cni_output = invocation
-        .invoker
+    let cni_output = invoker
         .invoke(&location, environment, stdin)
         .await
         .map_err(CniInvocationError::InvokerFailed)?;
@@ -96,7 +125,7 @@ async fn invoke_plugin(
 
 fn add_to_invocation_output(
     cni_output: String,
-    invocation_output: &mut CniInvocationOutput,
+    invocation_output: &mut CniInvocationResult,
 ) -> Result<(), CniInvocationError> {
     if let Ok(attachment) = serde_json::from_str::<CniAttachment>(&cni_output) {
         invocation_output.attachment = Some(attachment);
@@ -121,9 +150,9 @@ fn add_to_invocation_output(
 
 fn derive_stdin(
     plugin: &CniPlugin,
+    invocation_arguments: &CniInvocationArguments,
     invocation_target: &CniInvocationTarget,
     previous_attachment: Option<&CniAttachment>,
-    arguments: &CniInvocationArguments,
 ) -> Result<String, CniInvocationError> {
     // plugin options
     let mut map = plugin.plugin_options.clone();
@@ -136,9 +165,9 @@ fn derive_stdin(
         CniInvocationTarget::Plugin {
             plugin: _,
             cni_version: _,
-            network_name,
-        } => network_name.clone().into(),
-        CniInvocationTarget::PluginList(plugin_list) => plugin_list.name.clone(),
+            name,
+        } => name.as_ref().to_owned(),
+        CniInvocationTarget::PluginList(plugin_list) => plugin_list.name.as_ref().to_owned(),
     };
     map.insert("name".into(), Value::String(network_name));
 
@@ -147,11 +176,11 @@ fn derive_stdin(
         CniInvocationTarget::Plugin {
             plugin: _,
             cni_version,
-            network_name: _,
+            name: _,
         } => cni_version.clone(),
         CniInvocationTarget::PluginList(plugin_list) => plugin_list.cni_version.clone(),
     };
-    if let Some(new_cni_version) = &arguments.overridden_cni_version {
+    if let Some(new_cni_version) = &invocation_arguments.overridden_cni_version {
         cni_version = new_cni_version.clone();
     }
     map.insert("cniVersion".into(), Value::String(cni_version));

@@ -12,13 +12,11 @@ use tokio::{
 
 use crate::{
     plugins::{CniPlugin, CniPluginList},
-    types::{
-        CniAttachment, CniContainerId, CniError, CniInterfaceName, CniNetworkName, CniOperation, CniVersionObject,
-    },
+    types::{CniAttachment, CniContainerId, CniError, CniInterfaceName, CniName, CniVersionObject},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CniInvocationOutput {
+pub struct CniInvocationResult {
     pub attachment: Option<CniAttachment>,
     pub version_objects: Vec<CniVersionObject>,
 }
@@ -32,24 +30,6 @@ pub enum CniInvocationError {
     PluginProducedError(CniError),
 }
 
-pub struct CniInvocation<'a> {
-    pub operation: CniOperation,
-    pub arguments: CniInvocationArguments,
-    pub target: CniInvocationTarget<'a>,
-    pub invoker: Box<&'a dyn CniInvoker>,
-    pub locator: Box<&'a dyn CniLocator>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CniInvocationTarget<'a> {
-    Plugin {
-        plugin: &'a CniPlugin,
-        cni_version: String,
-        network_name: CniNetworkName,
-    },
-    PluginList(&'a CniPluginList),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniInvocationArguments {
     pub container_id: Option<CniContainerId>,
@@ -58,6 +38,16 @@ pub struct CniInvocationArguments {
     pub paths: Option<Vec<PathBuf>>,
     pub attachment: Option<CniAttachment>,
     pub overridden_cni_version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CniInvocationTarget<'a> {
+    Plugin {
+        plugin: &'a CniPlugin,
+        name: CniName,
+        cni_version: String,
+    },
+    PluginList(&'a CniPluginList),
 }
 
 #[async_trait]
