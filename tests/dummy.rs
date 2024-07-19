@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use tokio_cni::{
     invocation::{CniInvocation, CniInvocationOverrides, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
-    invoke,
     plugins::{CniDeserializable, CniPluginList},
+    runtime::invoke,
     types::{CniContainerId, CniInterfaceName},
 };
 
@@ -21,14 +21,6 @@ async fn t() {
         .await
         .unwrap();
 
-    // let arguments = CniInvocationArguments {
-    //     container_id: Some(CniContainerId::new("fcnet").unwrap()),
-    //     net_ns: Some("/var/run/netns/testing".into()),
-    //     interface_name: Some(CniInterfaceName::new("eth0").unwrap()),
-    //     paths: Some(vec![PathBuf::from("/usr/libexec/cni")]),
-    //     attachment: None,
-    //     overridden_cni_version: None,
-    // };
     let invocation_target = CniInvocationTarget::PluginList(&plugin_list);
     let invocation_overrides = CniInvocationOverrides::new();
 

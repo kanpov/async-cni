@@ -76,6 +76,14 @@ pub enum CniValidationError {
     IsInvalidValue,
 }
 
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct CniValidAttachment {
+    #[serde(rename = "containerID")]
+    pub container_id: String,
+    #[serde(rename = "ifname")]
+    pub interface_name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CniContainerId(String);
 
