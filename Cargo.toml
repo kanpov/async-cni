@@ -1,23 +1,15 @@
 [package]
-name = "async-cni"
+name = "tokio-cni"
 version = "0.1.0"
 edition = "2021"
-description = "An async and executor-agnostic implementation of a CNI runtime that adheres to the latest specification"
+description = "An async/Tokio implementation of a CNI runtime that adheres to the latest specification"
 
 [dependencies]
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 cidr = { version = "0.2.3", features = ["serde"] }
-
-tokio = { version = "1.38.0", features = [
-    "process",
-    "io-util",
-], optional = true }
+tokio = { version = "1.38.0", features = ["fs", "process", "io-util"] }
+async-trait = "0.1.81"
 
 [dev-dependencies]
-async-cni = { path = ".", features = ["tokio-executor"] }
-tokio = { version = "1.38.0", features = ["fs", "macros", "rt-multi-thread"] }
-
-[features]
-default = []
-tokio-executor = ["dep:tokio"]
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread"] }

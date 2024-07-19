@@ -1,6 +1,8 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, path::Path};
 
+use async_trait::async_trait;
 use serde_json::{Map, Value};
+use tokio::fs::read_to_string;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginList {
@@ -22,6 +24,7 @@ pub struct Plugin {
 
 #[derive(Debug)]
 pub enum CniDeserializationError {
+    FileError(tokio::io::Error),
     SerdeError(serde_json::Error),
     RootIsNotObject,
     MissingKey,
@@ -35,7 +38,13 @@ pub enum CniSerializationError {
     OverlappingKey,
 }
 
+#[async_trait]
 pub trait CniDeserializable: Sized {
+    async fn from_file(path: impl AsRef<Path> + Send) -> Result<Self, CniDeserializationError> {
+        let content = read_to_string(path).await.map_err(CniDeserializationError::FileError)?;
+        Self::from_string(content)
+    }
+
     fn from_string(content: impl AsRef<str>) -> Result<Self, CniDeserializationError> {
         let json_value: Value =
             serde_json::from_str(content.as_ref()).map_err(|err| CniDeserializationError::SerdeError(err))?;
