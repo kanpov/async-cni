@@ -2,7 +2,10 @@ use std::{collections::VecDeque, path::Path};
 
 use async_trait::async_trait;
 use serde_json::{Map, Value};
-use tokio::fs::read_to_string;
+use tokio::{
+    fs::{read_to_string, write},
+    io,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginList {
@@ -24,7 +27,7 @@ pub struct Plugin {
 
 #[derive(Debug)]
 pub enum CniDeserializationError {
-    FileError(tokio::io::Error),
+    FileError(io::Error),
     SerdeError(serde_json::Error),
     RootIsNotObject,
     MissingKey,
@@ -34,6 +37,7 @@ pub enum CniDeserializationError {
 
 #[derive(Debug)]
 pub enum CniSerializationError {
+    FileError(io::Error),
     SerdeError(serde_json::Error),
     OverlappingKey,
 }
@@ -54,7 +58,13 @@ pub trait CniDeserializable: Sized {
     fn from_json_value(json_value: Value) -> Result<Self, CniDeserializationError>;
 }
 
+#[async_trait]
 pub trait CniSerializable: Sized {
+    async fn to_file(self, path: impl AsRef<Path> + Send) -> Result<(), CniSerializationError> {
+        let content = self.to_string()?;
+        write(path, content).await.map_err(CniSerializationError::FileError)
+    }
+
     fn to_string(self) -> Result<String, CniSerializationError> {
         let json_value = self.to_json_value()?;
         serde_json::to_string(&json_value).map_err(|err| CniSerializationError::SerdeError(err))
