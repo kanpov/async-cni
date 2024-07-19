@@ -12,21 +12,33 @@ use tokio::{
 
 use crate::{
     plugins::{CniPlugin, CniPluginList},
-    types::{CniAttachment, CniContainerId, CniError, CniInterfaceName, CniOperation, CniVersionObject},
+    types::{
+        CniAttachment, CniContainerId, CniError, CniInterfaceName, CniNetworkName, CniOperation, CniVersionObject,
+    },
 };
 
-pub type CniResult = Result<CniInvocationOutput, CniInvocationError>;
-
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniInvocationOutput {
     pub attachment: Option<CniAttachment>,
     pub version_objects: Vec<CniVersionObject>,
 }
 
-pub struct CniInvocationError {
-    pub error: CniError,
-    pub partial_output: CniInvocationOutput,
-    pub cause_plugin: String,
-    pub cause_plugin_list: Option<String>,
+#[derive(Debug)]
+pub enum CniInvocationError {
+    LocatorNotFound {
+        plugin: String,
+    },
+    InvokerFailed {
+        plugin: String,
+        error: io::Error,
+    },
+    JsonOperationFailed(serde_json::Error),
+    PluginError {
+        error: CniError,
+        partial_output: CniInvocationOutput,
+        cause_plugin: String,
+        cause_plugin_list: Option<String>,
+    },
 }
 
 pub struct CniInvocation<'a> {
@@ -39,7 +51,11 @@ pub struct CniInvocation<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CniInvocationTarget<'a> {
-    Plugin(&'a CniPlugin),
+    Plugin {
+        plugin: &'a CniPlugin,
+        cni_version: String,
+        network_name: CniNetworkName,
+    },
     PluginList(&'a CniPluginList),
 }
 
@@ -49,6 +65,7 @@ pub struct CniInvocationArguments {
     pub net_ns: Option<String>,
     pub interface_name: Option<CniInterfaceName>,
     pub paths: Option<Vec<PathBuf>>,
+    pub overridden_cni_version: Option<String>,
 }
 
 #[async_trait]

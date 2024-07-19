@@ -1,7 +1,7 @@
 use std::vec;
 
 use cidr::{IpCidr, IpInet};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CniOperation {
@@ -13,7 +13,20 @@ pub enum CniOperation {
     GetStatus,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+impl AsRef<str> for CniOperation {
+    fn as_ref(&self) -> &str {
+        match self {
+            CniOperation::Add => "ADD",
+            CniOperation::Delete => "DEL",
+            CniOperation::Check => "CHECK",
+            CniOperation::GarbageCollect => "GC",
+            CniOperation::GetVersions => "VERSION",
+            CniOperation::GetStatus => "STATUS",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachment {
     #[serde(rename = "cniVersion")]
     pub cni_version: String,
@@ -22,7 +35,7 @@ pub struct CniAttachment {
     pub routes: Vec<CniAttachmentRoute>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentInterface {
     pub name: String,
     pub mac: Option<String>,
@@ -34,14 +47,14 @@ pub struct CniAttachmentInterface {
     pub pci_id: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentIp {
     pub address: IpCidr,
     pub gateway: IpInet,
     pub interface: u32,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentRoute {
     pub dst: IpCidr,
     pub gw: IpInet,
@@ -52,7 +65,7 @@ pub struct CniAttachmentRoute {
     pub scope: u32,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentDns {
     pub nameservers: Vec<IpInet>,
     pub domain: Option<String>,
@@ -77,6 +90,7 @@ pub struct CniError {
     pub details: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CniValidationError {
     IsEmptyOrBlank,
     FirstIsNotAlphabetic,
