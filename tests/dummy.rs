@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use tokio_cni::{
-    invocation::{CniInvocationArguments, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
+    invocation::{CniInvocation, CniInvocationOverrides, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
     invoke,
     plugins::{CniDeserializable, CniPluginList},
-    types::{CniContainerId, CniInterfaceName, CniOperation},
+    types::{CniContainerId, CniInterfaceName},
 };
 
 #[tokio::test]
@@ -21,52 +21,46 @@ async fn t() {
         .await
         .unwrap();
 
-    let arguments = CniInvocationArguments {
-        container_id: Some(CniContainerId::new("fcnet").unwrap()),
-        net_ns: Some("/var/run/netns/testing".into()),
-        interface_name: Some(CniInterfaceName::new("eth0").unwrap()),
-        paths: Some(vec![PathBuf::from("/usr/libexec/cni")]),
-        attachment: None,
-        overridden_cni_version: None,
-    };
-    let inv_target = CniInvocationTarget::PluginList(&plugin_list);
-    dbg!(invoke(CniOperation::Add, &arguments, &inv_target, &invoker, &locator)
-        .await
-        .unwrap());
-    dbg!(
-        invoke(CniOperation::Delete, &arguments, &inv_target, &invoker, &locator)
-            .await
-            .unwrap()
-    );
-    // let add_inv = CniArguments {
-    //     operation: CniOperation::Add,
-    //     arguments: CniArguments {
-    //         container_id: Some(CniContainerId::new("cnet".into()).unwrap()),
-    //         net_ns: Some("/var/run/netns/testing".into()),
-    //         interface_name: Some(CniInterfaceName::new("eth0".into()).unwrap()),
-    //         paths: Some(vec![PathBuf::from("/usr/libexec/cni")]),
-    //         attachment: None,
-    //         overridden_cni_version: None,
-    //     },
-    //     target: CniInvocationTarget::PluginList(&plugin_list),
-    //     invoker: Box::new(&invoker),
-    //     locator: Box::new(&locator),
+    // let arguments = CniInvocationArguments {
+    //     container_id: Some(CniContainerId::new("fcnet").unwrap()),
+    //     net_ns: Some("/var/run/netns/testing".into()),
+    //     interface_name: Some(CniInterfaceName::new("eth0").unwrap()),
+    //     paths: Some(vec![PathBuf::from("/usr/libexec/cni")]),
+    //     attachment: None,
+    //     overridden_cni_version: None,
     // };
-    // let output = dbg!(invoke(add_inv).await.unwrap());
+    let invocation_target = CniInvocationTarget::PluginList(&plugin_list);
+    let invocation_overrides = CniInvocationOverrides::new();
 
-    // let del_inv = CniArguments {
-    //     operation: CniOperation::Delete,
-    //     arguments: CniArguments {
-    //         container_id: Some(CniContainerId::new("cnet".into()).unwrap()),
-    //         net_ns: Some("/var/run/netns/testing".into()),
-    //         interface_name: Some(CniInterfaceName::new("eth0".into()).unwrap()),
-    //         paths: Some(vec![PathBuf::from("/usr/libexec/cni")]),
-    //         attachment: Some(output.attachment.unwrap()),
-    //         overridden_cni_version: None,
-    //     },
-    //     target: CniInvocationTarget::PluginList(&plugin_list),
-    //     invoker: Box::new(&invoker),
-    //     locator: Box::new(&locator),
-    // };
-    // let _ = invoke(del_inv).await.unwrap();
+    let add_inv = invoke(
+        CniInvocation::Add {
+            container_id: CniContainerId::new("fcnet").unwrap(),
+            net_ns: "/var/run/netns/testing".into(),
+            interface_name: CniInterfaceName::new("eth0").unwrap(),
+            paths: vec![PathBuf::from("/usr/libexec/cni")],
+        },
+        &invocation_overrides,
+        &invocation_target,
+        &invoker,
+        &locator,
+    )
+    .await
+    .unwrap();
+    dbg!(&add_inv);
+
+    let del_inv = invoke(
+        CniInvocation::Delete {
+            container_id: CniContainerId::new("fcnet").unwrap(),
+            interface_name: CniInterfaceName::new("eth0").unwrap(),
+            attachment: add_inv.attachment.unwrap(),
+            paths: vec![PathBuf::from("/usr/libexec/cni")],
+        },
+        &invocation_overrides,
+        &invocation_target,
+        &invoker,
+        &locator,
+    )
+    .await
+    .unwrap();
+    dbg!(&del_inv);
 }

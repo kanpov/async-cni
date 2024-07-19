@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniInvocationResult {
     pub attachment: Option<CniAttachment>,
-    pub version_objects: Vec<CniVersionObject>,
+    pub version_objects: HashMap<String, CniVersionObject>,
 }
 
 #[derive(Debug)]
@@ -31,13 +31,91 @@ pub enum CniInvocationError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CniInvocationArguments {
+pub enum CniInvocation {
+    Add {
+        container_id: CniContainerId,
+        net_ns: String,
+        interface_name: CniInterfaceName,
+        paths: Vec<PathBuf>,
+    },
+    Delete {
+        container_id: CniContainerId,
+        interface_name: CniInterfaceName,
+        attachment: CniAttachment,
+        paths: Vec<PathBuf>,
+    },
+    Check {
+        container_id: CniContainerId,
+        net_ns: String,
+        interface_name: CniInterfaceName,
+        attachment: CniAttachment,
+    },
+    Status,
+    Version,
+    GarbageCollect {
+        paths: Vec<PathBuf>,
+        valid_attachments: Vec<CniAttachment>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CniInvocationOverrides {
     pub container_id: Option<CniContainerId>,
     pub net_ns: Option<String>,
     pub interface_name: Option<CniInterfaceName>,
     pub paths: Option<Vec<PathBuf>>,
     pub attachment: Option<CniAttachment>,
-    pub overridden_cni_version: Option<String>,
+    pub valid_attachments: Option<Vec<CniAttachment>>,
+    pub cni_version: Option<String>,
+}
+
+impl CniInvocationOverrides {
+    pub fn new() -> Self {
+        Self {
+            container_id: None,
+            net_ns: None,
+            interface_name: None,
+            paths: None,
+            attachment: None,
+            valid_attachments: None,
+            cni_version: None,
+        }
+    }
+
+    pub fn container_id(&mut self, container_id: CniContainerId) -> &mut Self {
+        self.container_id = Some(container_id);
+        self
+    }
+
+    pub fn net_ns(&mut self, net_ns: String) -> &mut Self {
+        self.net_ns = Some(net_ns);
+        self
+    }
+
+    pub fn interface_name(&mut self, interface_name: CniInterfaceName) -> &mut Self {
+        self.interface_name = Some(interface_name);
+        self
+    }
+
+    pub fn paths(&mut self, paths: Vec<PathBuf>) -> &mut Self {
+        self.paths = Some(paths);
+        self
+    }
+
+    pub fn attachment(&mut self, attachment: CniAttachment) -> &mut Self {
+        self.attachment = Some(attachment);
+        self
+    }
+
+    pub fn valid_attachments(&mut self, valid_attachments: Vec<CniAttachment>) -> &mut Self {
+        self.valid_attachments = Some(valid_attachments);
+        self
+    }
+
+    pub fn cni_version(&mut self, cni_version: String) -> &mut Self {
+        self.cni_version = Some(cni_version);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

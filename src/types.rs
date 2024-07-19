@@ -1,29 +1,7 @@
-use std::vec;
+use std::{net::IpAddr, vec};
 
+use cidr::IpInet;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CniOperation {
-    Add,
-    Delete,
-    Check,
-    GarbageCollect,
-    GetVersions,
-    GetStatus,
-}
-
-impl AsRef<str> for CniOperation {
-    fn as_ref(&self) -> &str {
-        match self {
-            CniOperation::Add => "ADD",
-            CniOperation::Delete => "DEL",
-            CniOperation::Check => "CHECK",
-            CniOperation::GarbageCollect => "GC",
-            CniOperation::GetVersions => "VERSION",
-            CniOperation::GetStatus => "STATUS",
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachment {
@@ -48,15 +26,15 @@ pub struct CniAttachmentInterface {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentIp {
-    pub address: String,
-    pub gateway: String,
+    pub address: IpInet,
+    pub gateway: IpAddr,
     pub interface: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentRoute {
-    pub dst: String,
-    pub gw: String,
+    pub dst: IpInet,
+    pub gw: IpAddr,
     pub mtu: u32,
     pub advmss: u32,
     pub priority: u32,
