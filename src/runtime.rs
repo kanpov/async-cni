@@ -112,12 +112,9 @@ async fn invoke_plugin(
         }
     }
 
-    let stdin = derive_stdin(
-        plugin,
-        &overrides,
-        invocation_target,
-        invocation_output.attachment.as_ref(),
-    )?;
+    let previous_attachment = overrides.attachment.as_ref().or(invocation_output.attachment.as_ref());
+    let stdin = derive_stdin(plugin, &overrides, invocation_target, previous_attachment)?;
+    dbg!(&stdin);
     let cni_output = invoker
         .invoke(&location, environment, stdin)
         .await
@@ -217,7 +214,7 @@ fn derive_stdin(
             vec.push(serde_json::to_value(valid_attachment).map_err(CniInvocationError::JsonOperationFailed)?);
         }
 
-        map.insert("cni.dev/attachments".into(), Value::Array(vec));
+        map.insert("cni.dev/valid-attachments".into(), Value::Array(vec));
     }
 
     serde_json::to_string(&Value::Object(map)).map_err(CniInvocationError::JsonOperationFailed)
