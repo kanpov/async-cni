@@ -1,15 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
-use tokio_cni::invocation::{CniInvoker, SudoCniInvoker};
+use tokio_cni::invocation::{CniLocator, DirectoryCniLocator};
 
 #[tokio::test]
 async fn t() {
-    let ivk = SudoCniInvoker {
-        sudo_path: PathBuf::from("/usr/bin/sudo"),
-        password: Some("495762".into()),
+    let locator = DirectoryCniLocator {
+        directory_path: PathBuf::from("/usr/libexec/cni"),
+        exact_name: true,
     };
-    let output = dbg!(ivk
-        .invoke(PathBuf::from("/usr/bin/ls").as_ref(), HashMap::new(), "".into())
-        .await
-        .unwrap());
+    dbg!(locator.locate("tc-redirect-tap").await);
 }

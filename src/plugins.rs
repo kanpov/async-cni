@@ -8,17 +8,17 @@ use tokio::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginList {
+pub struct CniPluginList {
     pub cni_version: String,
     pub cni_versions: Option<Vec<String>>,
     pub name: String,
     pub disable_check: bool,
     pub disable_gc: bool,
-    pub plugins: Vec<Plugin>,
+    pub plugins: Vec<CniPlugin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Plugin {
+pub struct CniPlugin {
     pub plugin_type: String,
     pub args: Option<Map<String, Value>>,
     pub capabilities: Option<Map<String, Value>>,
@@ -73,7 +73,7 @@ pub trait CniSerializable: Sized {
     fn to_json_value(self) -> Result<Value, CniSerializationError>;
 }
 
-impl CniDeserializable for PluginList {
+impl CniDeserializable for CniPluginList {
     fn from_json_value(mut json_value: Value) -> Result<Self, CniDeserializationError> {
         let obj = json_value
             .as_object_mut()
@@ -128,12 +128,12 @@ impl CniDeserializable for PluginList {
             return Err(CniDeserializationError::EmptyArray);
         }
 
-        let mut plugins: Vec<Plugin> = Vec::with_capacity(plugin_jsons.len());
+        let mut plugins: Vec<CniPlugin> = Vec::with_capacity(plugin_jsons.len());
         while let Some(plugin_json) = plugin_jsons.pop_front() {
-            plugins.push(Plugin::from_json_value(plugin_json)?);
+            plugins.push(CniPlugin::from_json_value(plugin_json)?);
         }
 
-        Ok(PluginList {
+        Ok(CniPluginList {
             cni_version,
             cni_versions,
             name,
@@ -144,7 +144,7 @@ impl CniDeserializable for PluginList {
     }
 }
 
-impl CniDeserializable for Plugin {
+impl CniDeserializable for CniPlugin {
     fn from_json_value(json_value: Value) -> Result<Self, CniDeserializationError> {
         let obj = match json_value {
             Value::Object(x) => x,
@@ -180,7 +180,7 @@ impl CniDeserializable for Plugin {
         }
 
         let plugin_type = plugin_type_option.ok_or(CniDeserializationError::MissingKey)?;
-        Ok(Plugin {
+        Ok(CniPlugin {
             plugin_type,
             args,
             capabilities,
@@ -189,7 +189,7 @@ impl CniDeserializable for Plugin {
     }
 }
 
-impl CniSerializable for PluginList {
+impl CniSerializable for CniPluginList {
     fn to_json_value(self) -> Result<Value, CniSerializationError> {
         let mut map = Map::new();
 
@@ -215,7 +215,7 @@ impl CniSerializable for PluginList {
     }
 }
 
-impl CniSerializable for Plugin {
+impl CniSerializable for CniPlugin {
     fn to_json_value(self) -> Result<Value, CniSerializationError> {
         let mut map = Map::new();
 

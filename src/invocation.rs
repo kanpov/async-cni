@@ -10,14 +10,83 @@ use tokio::{
     process::Command,
 };
 
-pub struct InvocationOptions {
+use crate::{
+    plugins::{CniPlugin, CniPluginList},
+    types::{CniAttachment, CniContainerId, CniError, CniInterfaceName, CniOperation, CniVersionObject},
+};
+
+pub type CniResult = Result<CniInvocationOutput, CniInvocationError>;
+
+pub struct CniInvocationOutput {
+    pub attachment: Option<CniAttachment>,
+    pub version_objects: Vec<CniVersionObject>,
+}
+
+pub struct CniInvocationError {
+    pub error: CniError,
+    pub partial_output: CniInvocationOutput,
+    pub cause_plugin: String,
+    pub cause_plugin_list: Option<String>,
+}
+
+pub struct CniInvocation<'a> {
+    pub operation: CniOperation,
+    pub arguments: CniInvocationArguments,
+    pub target: CniInvocationTarget<'a>,
     pub invoker: Box<dyn CniInvoker>,
     pub locator: Box<dyn CniLocator>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CniInvocationTarget<'a> {
+    Plugin(&'a CniPlugin),
+    PluginList(&'a CniPluginList),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CniInvocationArguments {
+    pub container_id: Option<CniContainerId>,
+    pub net_ns: Option<String>,
+    pub interface_name: Option<CniInterfaceName>,
+    pub paths: Option<Vec<PathBuf>>,
 }
 
 #[async_trait]
 pub trait CniLocator {
     async fn locate(&self, plugin_type: &str) -> Option<PathBuf>;
+}
+
+pub struct MappedCniLocator {
+    pub lookup_map: HashMap<String, PathBuf>,
+}
+
+#[async_trait]
+impl CniLocator for MappedCniLocator {
+    async fn locate(&self, plugin_type: &str) -> Option<PathBuf> {
+        self.lookup_map.get(plugin_type).map(|path_buf| path_buf.clone())
+    }
+}
+
+pub struct DirectoryCniLocator {
+    pub directory_path: PathBuf,
+    pub exact_name: bool,
+}
+
+#[async_trait]
+impl CniLocator for DirectoryCniLocator {
+    async fn locate(&self, plugin_type: &str) -> Option<PathBuf> {
+        let mut read_dir = tokio::fs::read_dir(&self.directory_path).await.ok()?;
+
+        while let Some(entry) = read_dir.next_entry().await.ok()? {
+            if entry.file_name() == plugin_type
+                || (!self.exact_name && entry.file_name().to_string_lossy().contains(plugin_type))
+            {
+                return Some(entry.path());
+            }
+        }
+
+        None
+    }
 }
 
 #[async_trait]
