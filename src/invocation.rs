@@ -25,28 +25,19 @@ pub struct CniInvocationOutput {
 
 #[derive(Debug)]
 pub enum CniInvocationError {
-    LocatorNotFound {
-        plugin: String,
-    },
-    InvokerFailed {
-        plugin: String,
-        error: io::Error,
-    },
+    PluginNotFoundByLocator,
+    InvokerFailed(io::Error),
     JsonOperationFailed(serde_json::Error),
-    PluginError {
-        error: CniError,
-        partial_output: CniInvocationOutput,
-        cause_plugin: String,
-        cause_plugin_list: Option<String>,
-    },
+    PluginProducedUnrecognizableOutput(String),
+    PluginProducedError(CniError),
 }
 
 pub struct CniInvocation<'a> {
     pub operation: CniOperation,
     pub arguments: CniInvocationArguments,
     pub target: CniInvocationTarget<'a>,
-    pub invoker: Box<dyn CniInvoker>,
-    pub locator: Box<dyn CniLocator>,
+    pub invoker: Box<&'a dyn CniInvoker>,
+    pub locator: Box<&'a dyn CniLocator>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +56,7 @@ pub struct CniInvocationArguments {
     pub net_ns: Option<String>,
     pub interface_name: Option<CniInterfaceName>,
     pub paths: Option<Vec<PathBuf>>,
+    pub attachment: Option<CniAttachment>,
     pub overridden_cni_version: Option<String>,
 }
 
@@ -211,8 +203,12 @@ impl CniInvoker for SudoCniInvoker {
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
             .stderr(Stdio::piped())
-            .arg("-S")
-            .arg(full_command);
+            .arg("-S");
+
+        for component in full_command.split(' ') {
+            command.arg(component);
+        }
+
         let mut child = command.spawn()?;
         let mut child_stdin = child.stdin.take().ok_or_else(|| io::Error::other("Stdin not found"))?;
 

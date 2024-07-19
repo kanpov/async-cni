@@ -1,9 +1,9 @@
-use std::{collections::HashMap, net};
+use std::collections::HashMap;
 
 use invocation::{CniInvocation, CniInvocationArguments, CniInvocationError, CniInvocationOutput, CniInvocationTarget};
 use plugins::CniPlugin;
 use serde_json::Value;
-use types::{CniAttachment, CniOperation};
+use types::{CniAttachment, CniError, CniOperation, CniVersionObject};
 
 pub mod invocation;
 pub mod plugins;
@@ -11,64 +11,62 @@ pub mod types;
 
 /// Perform a CNI invocation, moving in the invocation. This is the main function of tokio-cni.
 pub async fn invoke<'a>(invocation: CniInvocation<'a>) -> Result<CniInvocationOutput, CniInvocationError> {
+    let mut invocation_output = CniInvocationOutput {
+        attachment: None,
+        version_objects: Vec::new(),
+    };
+
     match invocation.target {
         CniInvocationTarget::Plugin {
             plugin,
-            cni_version,
-            network_name,
-        } => todo!(),
+            cni_version: _,
+            network_name: _,
+        } => {
+            invoke_plugin(&invocation, plugin, &mut invocation_output).await?;
+        }
         CniInvocationTarget::PluginList(plugin_list) => {
-            for plugin in &plugin_list.plugins {
-                let location = invocation.locator.locate(&plugin.plugin_type).await;
-                let location = match location {
-                    Some(location) => location,
-                    None => {
-                        return Err(CniInvocationError::LocatorNotFound {
-                            plugin: plugin.plugin_type.clone(),
-                        })
-                    }
-                };
+            let plugin_iter = match invocation.operation {
+                CniOperation::Delete => plugin_list.plugins.iter().rev().collect::<Vec<_>>(),
+                _ => plugin_list.plugins.iter().collect::<Vec<_>>(),
+            };
 
-                invoke_single(
-                    location.to_string_lossy().into_owned().as_str(),
-                    plugin,
-                    &invocation.target,
-                    None,
-                    &invocation.operation,
-                    &invocation.arguments,
-                )
-                .await?;
+            for plugin in plugin_iter {
+                invoke_plugin(&invocation, plugin, &mut invocation_output).await?;
             }
         }
     }
 
-    todo!()
+    Ok(invocation_output)
 }
 
-async fn invoke_single(
-    program: &str,
+async fn invoke_plugin(
+    invocation: &CniInvocation<'_>,
     plugin: &CniPlugin,
-    invocation_target: &CniInvocationTarget<'_>,
-    previous_attachment: Option<&CniAttachment>,
-    operation: &CniOperation,
-    arguments: &CniInvocationArguments,
-) -> Result<String, CniInvocationError> {
-    let mut environment: HashMap<String, String> = HashMap::new();
-    environment.insert("CNI_COMMAND".into(), operation.as_ref().into());
+    invocation_output: &mut CniInvocationOutput,
+) -> Result<(), CniInvocationError> {
+    let location = match invocation.locator.locate(&plugin.plugin_type).await {
+        Some(location) => location,
+        None => {
+            return Err(CniInvocationError::PluginNotFoundByLocator);
+        }
+    };
 
-    if let Some(container_id) = &arguments.container_id {
+    let mut environment: HashMap<String, String> = HashMap::new();
+    environment.insert("CNI_COMMAND".into(), invocation.operation.as_ref().into());
+
+    if let Some(container_id) = &invocation.arguments.container_id {
         environment.insert("CNI_CONTAINERID".into(), container_id.as_ref().into());
     }
 
-    if let Some(net_ns) = &arguments.net_ns {
+    if let Some(net_ns) = &invocation.arguments.net_ns {
         environment.insert("CNI_NETNS".into(), net_ns.into());
     }
 
-    if let Some(interface_name) = &arguments.interface_name {
+    if let Some(interface_name) = &invocation.arguments.interface_name {
         environment.insert("CNI_IFNAME".into(), interface_name.as_ref().into());
     }
 
-    if let Some(paths) = &arguments.paths {
+    if let Some(paths) = &invocation.arguments.paths {
         if !paths.is_empty() {
             let path_str = paths
                 .iter()
@@ -79,10 +77,46 @@ async fn invoke_single(
         }
     }
 
-    let stdin = derive_stdin(plugin, invocation_target, previous_attachment, arguments)?;
-    dbg!(stdin);
+    let stdin = derive_stdin(
+        plugin,
+        &invocation.target,
+        invocation_output.attachment.as_ref(),
+        &invocation.arguments,
+    )?;
+    let cni_output = invocation
+        .invoker
+        .invoke(&location, environment, stdin)
+        .await
+        .map_err(CniInvocationError::InvokerFailed)?;
 
-    todo!()
+    add_to_invocation_output(cni_output, invocation_output)?;
+
+    Ok(())
+}
+
+fn add_to_invocation_output(
+    cni_output: String,
+    invocation_output: &mut CniInvocationOutput,
+) -> Result<(), CniInvocationError> {
+    if let Ok(attachment) = serde_json::from_str::<CniAttachment>(&cni_output) {
+        invocation_output.attachment = Some(attachment);
+        return Ok(());
+    }
+
+    if let Ok(version_object) = serde_json::from_str::<CniVersionObject>(&cni_output) {
+        invocation_output.version_objects.push(version_object);
+        return Ok(());
+    }
+
+    if let Ok(error) = serde_json::from_str::<CniError>(&cni_output) {
+        return Err(CniInvocationError::PluginProducedError(error));
+    }
+
+    if cni_output.trim().is_empty() {
+        return Ok(());
+    }
+
+    Err(CniInvocationError::PluginProducedUnrecognizableOutput(cni_output))
 }
 
 fn derive_stdin(
@@ -93,6 +127,9 @@ fn derive_stdin(
 ) -> Result<String, CniInvocationError> {
     // plugin options
     let mut map = plugin.plugin_options.clone();
+
+    // type
+    map.insert("type".into(), Value::String(plugin.plugin_type.clone()));
 
     // name
     let network_name: String = match invocation_target {
@@ -135,5 +172,5 @@ fn derive_stdin(
         map.insert("prevResult".into(), attachment_value);
     }
 
-    serde_json::to_string(&Value::Object(map)).map_err(CniInvocationError::JsonOperationFailed)
+    serde_json::to_string_pretty(&Value::Object(map)).map_err(CniInvocationError::JsonOperationFailed)
 }

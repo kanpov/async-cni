@@ -1,6 +1,5 @@
 use std::vec;
 
-use cidr::{IpCidr, IpInet};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,9 +29,9 @@ impl AsRef<str> for CniOperation {
 pub struct CniAttachment {
     #[serde(rename = "cniVersion")]
     pub cni_version: String,
-    pub interfaces: Vec<CniAttachmentInterface>,
-    pub ips: Vec<CniAttachmentIp>,
-    pub routes: Vec<CniAttachmentRoute>,
+    pub interfaces: Option<Vec<CniAttachmentInterface>>,
+    pub ips: Option<Vec<CniAttachmentIp>>,
+    pub routes: Option<Vec<CniAttachmentRoute>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -40,7 +39,7 @@ pub struct CniAttachmentInterface {
     pub name: String,
     pub mac: Option<String>,
     pub mtu: Option<u32>,
-    pub sandbox: String,
+    pub sandbox: Option<String>,
     #[serde(rename = "socketPath")]
     pub socket_path: Option<String>,
     #[serde(rename = "pciID")]
@@ -49,15 +48,15 @@ pub struct CniAttachmentInterface {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentIp {
-    pub address: IpCidr,
-    pub gateway: IpInet,
+    pub address: String,
+    pub gateway: String,
     pub interface: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentRoute {
-    pub dst: IpCidr,
-    pub gw: IpInet,
+    pub dst: String,
+    pub gw: String,
     pub mtu: u32,
     pub advmss: u32,
     pub priority: u32,
@@ -67,10 +66,10 @@ pub struct CniAttachmentRoute {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentDns {
-    pub nameservers: Vec<IpInet>,
+    pub nameservers: Vec<String>,
     pub domain: Option<String>,
-    pub search: Vec<String>,
-    pub options: Vec<String>,
+    pub search: Option<Vec<String>>,
+    pub options: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -84,7 +83,7 @@ pub struct CniVersionObject {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniError {
     #[serde(rename = "cniVersion")]
-    pub cni_version: String,
+    pub cni_version: Option<String>,
     pub code: u16,
     pub msg: String,
     pub details: Option<String>,
