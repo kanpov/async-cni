@@ -7,7 +7,7 @@ use crate::plugins::CniPlugin;
 use crate::types::{CniAttachment, CniError, CniOperation, CniVersionObject};
 use serde_json::Value;
 
-/// Perform a CNI invocation, moving in the invocation. This is the main function of tokio-cni.
+/// Perform a CNI invocation. This is the main function of tokio-cni.
 pub async fn invoke(
     operation: CniOperation,
     invocation_arguments: &CniInvocationArguments,
@@ -15,7 +15,7 @@ pub async fn invoke(
     invoker: &impl CniInvoker,
     locator: &impl CniLocator,
 ) -> Result<CniInvocationResult, CniInvocationError> {
-    let mut invocation_output = CniInvocationResult {
+    let mut invocation_result = CniInvocationResult {
         attachment: None,
         version_objects: HashMap::new(),
     };
@@ -31,7 +31,7 @@ pub async fn invoke(
                 invocation_arguments,
                 plugin,
                 invocation_target,
-                &mut invocation_output,
+                &mut invocation_result,
                 invoker,
                 locator,
             )
@@ -49,7 +49,7 @@ pub async fn invoke(
                     invocation_arguments,
                     plugin,
                     invocation_target,
-                    &mut invocation_output,
+                    &mut invocation_result,
                     invoker,
                     locator,
                 )
@@ -58,7 +58,7 @@ pub async fn invoke(
         }
     }
 
-    Ok(invocation_output)
+    Ok(invocation_result)
 }
 
 async fn invoke_plugin(
@@ -123,12 +123,12 @@ async fn invoke_plugin(
         .await
         .map_err(CniInvocationError::InvokerFailed)?;
 
-    add_to_invocation_output(cni_output, plugin, invocation_output)?;
+    add_to_invocation_result(cni_output, plugin, invocation_output)?;
 
     Ok(())
 }
 
-fn add_to_invocation_output(
+fn add_to_invocation_result(
     cni_output: String,
     plugin: &CniPlugin,
     invocation_output: &mut CniInvocationResult,

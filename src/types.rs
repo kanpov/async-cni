@@ -147,21 +147,21 @@ impl From<CniContainerId> for String {
 pub struct CniName(String);
 
 impl CniName {
-    pub fn new(network_name: impl Into<String>) -> Result<CniName, CniValidationError> {
-        let network_name = network_name.into();
+    pub fn new(name: impl Into<String>) -> Result<CniName, CniValidationError> {
+        let name = name.into();
 
-        if network_name.trim().is_empty() {
+        if name.trim().is_empty() {
             return Err(CniValidationError::IsEmptyOrBlank);
         }
-        if !network_name.as_bytes().first().unwrap().is_ascii_alphabetic() {
+        if !name.as_bytes().first().unwrap().is_ascii_alphabetic() {
             return Err(CniValidationError::FirstIsNotAlphabetic);
         }
 
-        if !network_name.as_bytes().iter().all(|c| c.is_ascii_alphanumeric()) {
+        if !name.as_bytes().iter().all(|c| c.is_ascii_alphanumeric()) {
             return Err(CniValidationError::ContainsForbiddenCharacter);
         }
 
-        Ok(CniName(network_name))
+        Ok(CniName(name))
     }
 }
 
