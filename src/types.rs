@@ -3,6 +3,16 @@ use std::{net::IpAddr, vec};
 use cidr::IpInet;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CniOperation {
+    Add,
+    Delete,
+    Check,
+    Version,
+    Status,
+    GarbageCollect,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachment {
     #[serde(rename = "cniVersion")]

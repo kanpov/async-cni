@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 
 use crate::invocation::{
-    CniInvocation, CniInvocationError, CniInvocationOverrides, CniInvocationResult, CniInvocationTarget, CniInvoker,
-    CniLocator,
+    CniInvocationArguments, CniInvocationError, CniInvocationResult, CniInvocationTarget, CniInvoker, CniLocator,
 };
 use crate::plugins::CniPlugin;
-use crate::types::{CniAttachment, CniError, CniVersionObject};
+use crate::types::{CniAttachment, CniError, CniOperation, CniVersionObject};
 use serde_json::Value;
 
 /// Perform a CNI invocation, moving in the invocation. This is the main function of tokio-cni.
 pub async fn invoke(
-    invocation: CniInvocation,
-    invocation_overrides: &CniInvocationOverrides,
+    operation: CniOperation,
+    invocation_arguments: &CniInvocationArguments,
     invocation_target: &CniInvocationTarget<'_>,
     invoker: &impl CniInvoker,
     locator: &impl CniLocator,
@@ -28,8 +27,8 @@ pub async fn invoke(
             name: _,
         } => {
             invoke_plugin(
-                invocation,
-                invocation_overrides,
+                operation,
+                invocation_arguments,
                 plugin,
                 invocation_target,
                 &mut invocation_output,
@@ -39,21 +38,15 @@ pub async fn invoke(
             .await?;
         }
         CniInvocationTarget::PluginList(plugin_list) => {
-            let plugin_iter = match invocation {
-                CniInvocation::Delete {
-                    container_id: _,
-                    net_ns: _,
-                    interface_name: _,
-                    attachment: _,
-                    paths: _,
-                } => plugin_list.plugins.iter().rev().collect::<Vec<_>>(),
+            let plugin_iter = match operation {
+                CniOperation::Delete => plugin_list.plugins.iter().rev().collect::<Vec<_>>(),
                 _ => plugin_list.plugins.iter().collect::<Vec<_>>(),
             };
 
             for plugin in plugin_iter {
                 invoke_plugin(
-                    invocation.clone(),
-                    invocation_overrides,
+                    operation,
+                    invocation_arguments,
                     plugin,
                     invocation_target,
                     &mut invocation_output,
@@ -69,8 +62,8 @@ pub async fn invoke(
 }
 
 async fn invoke_plugin(
-    invocation: CniInvocation,
-    invocation_overrides: &CniInvocationOverrides,
+    operation: CniOperation,
+    invocation_arguments: &CniInvocationArguments,
     plugin: &CniPlugin,
     invocation_target: &CniInvocationTarget<'_>,
     invocation_output: &mut CniInvocationResult,
@@ -85,24 +78,31 @@ async fn invoke_plugin(
     };
 
     let mut environment: HashMap<String, String> = HashMap::new();
-    environment.insert("CNI_COMMAND".into(), invocation.as_ref().into());
+    environment.insert(
+        "CNI_COMMAND".into(),
+        match operation {
+            CniOperation::Add => "ADD".into(),
+            CniOperation::Delete => "DEL".into(),
+            CniOperation::Check => "CHECK".into(),
+            CniOperation::Version => "VERSION".into(),
+            CniOperation::Status => "STATUS".into(),
+            CniOperation::GarbageCollect => "GC".into(),
+        },
+    );
 
-    let mut overrides: CniInvocationOverrides = invocation.into();
-    overrides.merge_with(invocation_overrides);
-
-    if let Some(container_id) = &overrides.container_id {
+    if let Some(container_id) = &invocation_arguments.container_id {
         environment.insert("CNI_CONTAINERID".into(), container_id.as_ref().into());
     }
 
-    if let Some(net_ns) = &overrides.net_ns {
+    if let Some(net_ns) = &invocation_arguments.net_ns {
         environment.insert("CNI_NETNS".into(), net_ns.into());
     }
 
-    if let Some(interface_name) = &overrides.interface_name {
+    if let Some(interface_name) = &invocation_arguments.interface_name {
         environment.insert("CNI_IFNAME".into(), interface_name.as_ref().into());
     }
 
-    if let Some(paths) = &overrides.paths {
+    if let Some(paths) = &invocation_arguments.paths {
         if !paths.is_empty() {
             let path_str = paths
                 .iter()
@@ -113,8 +113,11 @@ async fn invoke_plugin(
         }
     }
 
-    let previous_attachment = overrides.attachment.as_ref().or(invocation_output.attachment.as_ref());
-    let stdin = derive_stdin(plugin, &overrides, invocation_target, previous_attachment)?;
+    let previous_attachment = invocation_arguments
+        .attachment
+        .as_ref()
+        .or(invocation_output.attachment.as_ref());
+    let stdin = derive_stdin(plugin, &invocation_arguments, invocation_target, previous_attachment)?;
     let cni_output = invoker
         .invoke(&location, environment, stdin)
         .await
@@ -155,7 +158,7 @@ fn add_to_invocation_output(
 
 fn derive_stdin(
     plugin: &CniPlugin,
-    invocation_overrides: &CniInvocationOverrides,
+    arguments: &CniInvocationArguments,
     invocation_target: &CniInvocationTarget,
     previous_attachment: Option<&CniAttachment>,
 ) -> Result<String, CniInvocationError> {
@@ -185,7 +188,7 @@ fn derive_stdin(
         } => cni_version.clone(),
         CniInvocationTarget::PluginList(plugin_list) => plugin_list.cni_version.clone(),
     };
-    if let Some(new_cni_version) = &invocation_overrides.cni_version {
+    if let Some(new_cni_version) = &arguments.cni_version {
         cni_version = new_cni_version.clone();
     }
     map.insert("cniVersion".into(), Value::String(cni_version));
@@ -207,7 +210,7 @@ fn derive_stdin(
     }
 
     // gc valid attachments
-    if let Some(valid_attachments) = &invocation_overrides.valid_attachments {
+    if let Some(valid_attachments) = &arguments.valid_attachments {
         let mut vec: Vec<Value> = Vec::with_capacity(valid_attachments.len());
 
         for valid_attachment in valid_attachments {
@@ -218,124 +221,4 @@ fn derive_stdin(
     }
 
     serde_json::to_string(&Value::Object(map)).map_err(CniInvocationError::JsonOperationFailed)
-}
-
-impl AsRef<str> for CniInvocation {
-    fn as_ref(&self) -> &str {
-        match self {
-            CniInvocation::Add {
-                container_id: _,
-                net_ns: _,
-                interface_name: _,
-                paths: _,
-            } => "ADD",
-            CniInvocation::Delete {
-                container_id: _,
-                net_ns: _,
-                interface_name: _,
-                attachment: _,
-                paths: _,
-            } => "DEL",
-            CniInvocation::Check {
-                container_id: _,
-                net_ns: _,
-                interface_name: _,
-                attachment: _,
-            } => "CHECK",
-            CniInvocation::Status => "STATUS",
-            CniInvocation::Version => "VERSION",
-            CniInvocation::GarbageCollect {
-                paths: _,
-                valid_attachments: _,
-            } => "GC",
-        }
-    }
-}
-
-impl From<CniInvocation> for CniInvocationOverrides {
-    fn from(value: CniInvocation) -> Self {
-        let mut builder = CniInvocationOverrides::new();
-
-        match value {
-            CniInvocation::Add {
-                container_id,
-                net_ns,
-                interface_name,
-                paths,
-            } => {
-                builder
-                    .container_id(container_id)
-                    .net_ns(net_ns)
-                    .interface_name(interface_name)
-                    .paths(paths);
-            }
-            CniInvocation::Delete {
-                container_id,
-                net_ns,
-                interface_name,
-                attachment,
-                paths,
-            } => {
-                builder
-                    .container_id(container_id)
-                    .net_ns(net_ns)
-                    .interface_name(interface_name)
-                    .attachment(attachment)
-                    .paths(paths);
-            }
-            CniInvocation::Check {
-                container_id,
-                net_ns,
-                interface_name,
-                attachment,
-            } => {
-                builder
-                    .container_id(container_id)
-                    .net_ns(net_ns)
-                    .interface_name(interface_name)
-                    .attachment(attachment);
-            }
-            CniInvocation::GarbageCollect {
-                paths,
-                valid_attachments,
-            } => {
-                builder.paths(paths).valid_attachments(valid_attachments);
-            }
-            _ => {}
-        }
-
-        builder
-    }
-}
-
-impl CniInvocationOverrides {
-    fn merge_with(&mut self, other: &CniInvocationOverrides) {
-        if let Some(container_id) = &other.container_id {
-            self.container_id = Some(container_id.clone());
-        }
-
-        if let Some(net_ns) = &other.net_ns {
-            self.net_ns = Some(net_ns.clone());
-        }
-
-        if let Some(interface_name) = &other.interface_name {
-            self.interface_name = Some(interface_name.clone());
-        }
-
-        if let Some(paths) = &other.paths {
-            self.paths = Some(paths.clone());
-        }
-
-        if let Some(attachment) = &other.attachment {
-            self.attachment = Some(attachment.clone());
-        }
-
-        if let Some(valid_attachments) = &other.valid_attachments {
-            self.valid_attachments = Some(valid_attachments.clone());
-        }
-
-        if let Some(cni_version) = &other.cni_version {
-            self.cni_version = Some(cni_version.clone());
-        }
-    }
 }

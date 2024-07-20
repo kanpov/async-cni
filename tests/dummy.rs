@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use tokio_cni::{
-    invocation::{CniInvocation, CniInvocationOverrides, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
+    invocation::{CniInvocationArguments, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
     plugins::{CniDeserializable, CniPluginList},
     runtime::invoke,
-    types::{CniContainerId, CniInterfaceName},
+    types::{CniContainerId, CniInterfaceName, CniOperation},
 };
 
 #[tokio::test]
@@ -22,43 +22,34 @@ async fn t() {
         .unwrap();
 
     let invocation_target = CniInvocationTarget::PluginList(&plugin_list);
-    let invocation_overrides = CniInvocationOverrides::new();
+    let mut arguments = CniInvocationArguments::new();
+    arguments
+        .container_id(CniContainerId::new("fcnet").unwrap())
+        .net_ns("/var/run/netns/testing")
+        .interface_name(CniInterfaceName::new("eth0").unwrap())
+        .paths(vec![PathBuf::from("/usr/libexec/cni")]);
 
-    let add_inv = invoke(
-        CniInvocation::Add {
-            container_id: CniContainerId::new("fcnet").unwrap(),
-            net_ns: "/var/run/netns/testing".into(),
-            interface_name: CniInterfaceName::new("eth0").unwrap(),
-            paths: vec![PathBuf::from("/usr/libexec/cni")],
-        },
-        &invocation_overrides,
-        &invocation_target,
-        &invoker,
-        &locator,
-    )
-    .await
-    .unwrap();
+    let add_inv = invoke(CniOperation::Add, &arguments, &invocation_target, &invoker, &locator)
+        .await
+        .unwrap();
     dbg!(&add_inv);
+    arguments.attachment(add_inv.attachment.unwrap());
 
-    let _del_inv = dbg!(invoke(
-        CniInvocation::Delete {
-            container_id: CniContainerId::new("fcnet").unwrap(),
-            net_ns: "/var/run/netns/testing".into(),
-            interface_name: CniInterfaceName::new("eth0").unwrap(),
-            attachment: add_inv.attachment.unwrap(),
-            paths: vec![PathBuf::from("/usr/libexec/cni")],
-        },
-        &invocation_overrides,
-        &invocation_target,
-        &invoker,
-        &locator,
-    )
-    .await
-    .unwrap());
+    dbg!(
+        invoke(CniOperation::Check, &arguments, &invocation_target, &invoker, &locator)
+            .await
+            .unwrap()
+    );
+
+    let _del_inv = dbg!(
+        invoke(CniOperation::Delete, &arguments, &invocation_target, &invoker, &locator,)
+            .await
+            .unwrap()
+    );
 
     dbg!(invoke(
-        CniInvocation::Version,
-        &invocation_overrides,
+        CniOperation::Version,
+        &arguments,
         &invocation_target,
         &invoker,
         &locator

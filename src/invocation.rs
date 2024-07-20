@@ -31,36 +31,7 @@ pub enum CniInvocationError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CniInvocation {
-    Add {
-        container_id: CniContainerId,
-        net_ns: String,
-        interface_name: CniInterfaceName,
-        paths: Vec<PathBuf>,
-    },
-    Delete {
-        container_id: CniContainerId,
-        net_ns: String,
-        interface_name: CniInterfaceName,
-        attachment: CniAttachment,
-        paths: Vec<PathBuf>,
-    },
-    Check {
-        container_id: CniContainerId,
-        net_ns: String,
-        interface_name: CniInterfaceName,
-        attachment: CniAttachment,
-    },
-    Status,
-    Version,
-    GarbageCollect {
-        paths: Vec<PathBuf>,
-        valid_attachments: Vec<CniValidAttachment>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CniInvocationOverrides {
+pub struct CniInvocationArguments {
     pub(crate) container_id: Option<CniContainerId>,
     pub(crate) net_ns: Option<String>,
     pub(crate) interface_name: Option<CniInterfaceName>,
@@ -70,7 +41,7 @@ pub struct CniInvocationOverrides {
     pub(crate) cni_version: Option<String>,
 }
 
-impl CniInvocationOverrides {
+impl CniInvocationArguments {
     pub fn new() -> Self {
         Self {
             container_id: None,
