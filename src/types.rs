@@ -1,4 +1,4 @@
-use std::{net::IpAddr, str::FromStr, vec};
+use std::{net::IpAddr, path::PathBuf, str::FromStr, vec};
 
 use cidr::IpInet;
 use serde::{Deserialize, Serialize};
@@ -223,12 +223,48 @@ impl From<CniInterfaceName> for String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CniNetworkNamespace {
+    LinuxNamespace(PathBuf),
+    Custom(CniName),
+}
+
+impl From<&CniNetworkNamespace> for String {
+    fn from(value: &CniNetworkNamespace) -> Self {
+        match value {
+            CniNetworkNamespace::LinuxNamespace(path_buf) => path_buf.to_string_lossy().into_owned(),
+            CniNetworkNamespace::Custom(name) => name.as_ref().to_owned(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CniVersion(String);
 
 impl CniVersion {
-    fn new(major: u8, minor: u8, patch: u8) -> CniVersion {
+    pub fn new(major: u8, minor: u8, patch: u8) -> CniVersion {
         CniVersion(format!("{major}.{minor}.{patch}"))
+    }
+
+    pub fn parse(value: impl AsRef<str>) -> Result<CniVersion, CniValidationError> {
+        let splits = value.as_ref().split('.').collect::<Vec<_>>();
+        if splits.len() != 3 {
+            return Err(CniValidationError::IncorrectSplitAmount);
+        }
+
+        let major = Self::parse_split(&splits, 0)?;
+        let minor = Self::parse_split(&splits, 1)?;
+        let patch = Self::parse_split(&splits, 2)?;
+
+        Ok(CniVersion::new(major, minor, patch))
+    }
+
+    fn parse_split(splits: &Vec<&str>, index: usize) -> Result<u8, CniValidationError> {
+        splits
+            .get(index)
+            .ok_or(CniValidationError::SplitMissing)?
+            .parse()
+            .map_err(CniValidationError::SplitNotParseable)
     }
 }
 
@@ -244,27 +280,134 @@ impl From<CniVersion> for String {
     }
 }
 
-impl TryFrom<&str> for CniVersion {
-    type Error = CniValidationError;
+#[cfg(test)]
+mod tests {
+    use crate::types::{CniContainerId, CniInterfaceName, CniName, CniValidationError, CniVersion, IFNAME_MAX_LENGTH};
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let splits = value.split('.').collect::<Vec<_>>();
-        if splits.len() != 3 {
-            return Err(CniValidationError::IncorrectSplitAmount);
+    #[test]
+    fn container_id_rejects_empty_or_blank() {
+        for container_id in vec!["", "   "] {
+            assert_eq!(
+                CniContainerId::new(container_id),
+                Err(CniValidationError::IsEmptyOrBlank)
+            );
+        }
+    }
+
+    #[test]
+    fn container_id_rejects_first_nonalphabetic() {
+        for container_id in vec!["1abc", "мabc", "!abc", "_abc", ":abc", ".abc"] {
+            assert_eq!(
+                CniContainerId::new(container_id),
+                Err(CniValidationError::FirstIsNotAlphabetic)
+            );
+        }
+    }
+
+    #[test]
+    fn container_id_rejects_invalid_chars() {
+        for container_id in vec!["a!bc", "a:bc", "a$bc", "a^bc", "a{bc", "a}bc"] {
+            assert_eq!(
+                CniContainerId::new(container_id),
+                Err(CniValidationError::ContainsForbiddenCharacter)
+            );
+        }
+    }
+
+    #[test]
+    fn container_id_accepts_valid() {
+        for container_id in vec!["abc", "a1bc", "AbC", "A_bc", "A.bc", "A-bc"] {
+            assert_eq!(CniContainerId::new(container_id).unwrap().as_ref(), container_id);
+        }
+    }
+
+    #[test]
+    fn name_rejects_empty_or_blank() {
+        for name in vec!["", "   "] {
+            assert_eq!(CniName::new(name), Err(CniValidationError::IsEmptyOrBlank));
+        }
+    }
+
+    #[test]
+    fn name_rejects_non_alphabetic_first_char() {
+        for name in vec!["1abc", "_abc", ":abc", "!abc", "лabc", "~abc"] {
+            assert_eq!(CniName::new(name), Err(CniValidationError::FirstIsNotAlphabetic));
+        }
+    }
+
+    #[test]
+    fn name_rejects_non_alphanumeric_non_first_char() {
+        for name in vec!["a!c", "a:c", "a.c", "a_c"] {
+            assert_eq!(CniName::new(name), Err(CniValidationError::ContainsForbiddenCharacter));
+        }
+    }
+
+    #[test]
+    fn name_accepts_valid() {
+        for name in vec!["abc", "Abc", "AbC", "A0C", "aC0", "a6bbB1"] {
+            assert_eq!(CniName::new(name).unwrap().as_ref(), name);
+        }
+    }
+
+    #[test]
+    fn interface_name_rejects_empty_or_blank() {
+        for interface_name in vec!["", " ", "  ", "   "] {
+            assert_eq!(
+                CniInterfaceName::new(interface_name),
+                Err(CniValidationError::IsEmptyOrBlank)
+            );
+        }
+    }
+
+    #[test]
+    fn interface_name_rejects_too_long() {
+        let interface_name = (0..=16).map(|_| 'c').collect::<String>();
+        assert_eq!(
+            CniInterfaceName::new(interface_name),
+            Err(CniValidationError::TooLong {
+                maximum_allowed: IFNAME_MAX_LENGTH
+            })
+        );
+    }
+
+    #[test]
+    fn interface_name_rejects_forbidden_values() {
+        for interface_name in vec![".", ".."] {
+            assert_eq!(
+                CniInterfaceName::new(interface_name),
+                Err(CniValidationError::IsForbiddenValue)
+            );
+        }
+    }
+
+    #[test]
+    fn interface_name_rejects_forbidden_chars() {
+        for interface_name in vec!["a c", "a:c", "a/c"] {
+            assert_eq!(
+                CniInterfaceName::new(interface_name),
+                Err(CniValidationError::ContainsForbiddenCharacter)
+            );
+        }
+    }
+
+    #[test]
+    fn interface_name_accepts_valid() {
+        for interface_name in vec!["standard_ifname", "another_ifname", "last"] {
+            assert_eq!(CniInterfaceName::new(interface_name).unwrap().as_ref(), interface_name);
+        }
+    }
+
+    #[test]
+    fn version_doesnt_parse_malformed() {
+        for version in vec!["0.0", "0.0.0.0", "", " "] {
+            assert_eq!(
+                CniVersion::parse(version),
+                Err(CniValidationError::IncorrectSplitAmount)
+            );
         }
 
-        let major = parse_split(&splits, 0)?;
-        let minor = parse_split(&splits, 1)?;
-        let patch = parse_split(&splits, 2)?;
-
-        Ok(CniVersion::new(major, minor, patch))
+        for version in vec!["a.0.0", "0.b.0", "0.0.c", "!.:.>"] {
+            assert!(CniVersion::parse(version).is_err());
+        }
     }
-}
-
-fn parse_split(splits: &Vec<&str>, index: usize) -> Result<u8, CniValidationError> {
-    splits
-        .get(index)
-        .ok_or(CniValidationError::SplitMissing)?
-        .parse()
-        .map_err(CniValidationError::SplitNotParseable)
 }

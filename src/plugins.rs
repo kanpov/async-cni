@@ -82,23 +82,20 @@ impl CniDeserializable for CniPluginList {
         let obj = json_value
             .as_object_mut()
             .ok_or(CniDeserializationError::RootIsNotObject)?;
-        let cni_version: CniVersion = obj
-            .remove("cniVersion")
-            .ok_or(CniDeserializationError::MissingKey)?
-            .as_str()
-            .ok_or(CniDeserializationError::KeyOfWrongType)?
-            .try_into()
-            .map_err(CniDeserializationError::MalformedVersion)?;
+        let cni_version: CniVersion = CniVersion::parse(
+            obj.remove("cniVersion")
+                .ok_or(CniDeserializationError::MissingKey)?
+                .as_str()
+                .ok_or(CniDeserializationError::KeyOfWrongType)?,
+        )
+        .map_err(CniDeserializationError::MalformedVersion)?;
         let cni_versions = match obj.remove("cniVersions") {
             Some(list) => {
                 let list = list.as_array().ok_or(CniDeserializationError::KeyOfWrongType)?;
                 let mut parsed_list: Vec<CniVersion> = Vec::with_capacity(list.len());
                 for list_value in list {
                     parsed_list.push(
-                        list_value
-                            .as_str()
-                            .ok_or(CniDeserializationError::KeyOfWrongType)?
-                            .try_into()
+                        CniVersion::parse(list_value.as_str().ok_or(CniDeserializationError::KeyOfWrongType)?)
                             .map_err(CniDeserializationError::MalformedVersion)?,
                     );
                 }

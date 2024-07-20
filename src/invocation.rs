@@ -13,8 +13,8 @@ use tokio::{
 use crate::{
     plugins::{CniPlugin, CniPluginList},
     types::{
-        CniAttachment, CniContainerId, CniError, CniInterfaceName, CniName, CniValidAttachment, CniVersion,
-        CniVersionObject,
+        CniAttachment, CniContainerId, CniError, CniInterfaceName, CniName, CniNetworkNamespace, CniValidAttachment,
+        CniVersion, CniVersionObject,
     },
 };
 
@@ -36,7 +36,7 @@ pub enum CniInvocationError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniInvocationArguments {
     pub(crate) container_id: Option<CniContainerId>,
-    pub(crate) net_ns: Option<String>,
+    pub(crate) network_namespace: Option<CniNetworkNamespace>,
     pub(crate) interface_name: Option<CniInterfaceName>,
     pub(crate) paths: Option<Vec<PathBuf>>,
     pub(crate) attachment: Option<CniAttachment>,
@@ -48,7 +48,7 @@ impl CniInvocationArguments {
     pub fn new() -> Self {
         Self {
             container_id: None,
-            net_ns: None,
+            network_namespace: None,
             interface_name: None,
             paths: None,
             attachment: None,
@@ -62,8 +62,8 @@ impl CniInvocationArguments {
         self
     }
 
-    pub fn net_ns(&mut self, net_ns: impl Into<String>) -> &mut Self {
-        self.net_ns = Some(net_ns.into());
+    pub fn network_namespace(&mut self, network_namespace: CniNetworkNamespace) -> &mut Self {
+        self.network_namespace = Some(network_namespace);
         self
     }
 

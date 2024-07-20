@@ -4,7 +4,7 @@ use tokio_cni::{
     invocation::{CniInvocationArguments, CniInvocationTarget, DirectoryCniLocator, SuCniInvoker},
     plugins::{CniDeserializable, CniPluginList},
     runtime::invoke,
-    types::{CniContainerId, CniInterfaceName, CniOperation},
+    types::{CniContainerId, CniInterfaceName, CniNetworkNamespace, CniOperation},
 };
 
 #[tokio::test]
@@ -25,7 +25,7 @@ async fn t() {
     let mut arguments = CniInvocationArguments::new();
     arguments
         .container_id(CniContainerId::new("fcnet").unwrap())
-        .net_ns("/var/run/netns/testing")
+        .network_namespace(CniNetworkNamespace::LinuxNamespace(PathBuf::from("/usr/libexec/cni")))
         .interface_name(CniInterfaceName::new("eth0").unwrap())
         .paths(vec!["/usr/libexec/cni"]);
 
@@ -46,14 +46,4 @@ async fn t() {
             .await
             .unwrap()
     );
-
-    dbg!(invoke(
-        CniOperation::Version,
-        &arguments,
-        &invocation_target,
-        &invoker,
-        &locator
-    )
-    .await
-    .unwrap());
 }

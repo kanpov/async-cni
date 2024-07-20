@@ -94,7 +94,7 @@ async fn invoke_plugin(
         environment.insert("CNI_CONTAINERID".into(), container_id.as_ref().into());
     }
 
-    if let Some(net_ns) = &invocation_arguments.net_ns {
+    if let Some(net_ns) = &invocation_arguments.network_namespace {
         environment.insert("CNI_NETNS".into(), net_ns.into());
     }
 
