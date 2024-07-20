@@ -7,12 +7,12 @@ use tokio::{
     io,
 };
 
-use crate::types::{CniName, CniValidationError};
+use crate::types::{CniName, CniValidationError, CniVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniPluginList {
-    pub cni_version: String,
-    pub cni_versions: Option<Vec<String>>,
+    pub cni_version: CniVersion,
+    pub cni_versions: Option<Vec<CniVersion>>,
     pub name: CniName,
     pub disable_check: bool,
     pub disable_gc: bool,
@@ -36,6 +36,7 @@ pub enum CniDeserializationError {
     KeyOfWrongType,
     EmptyArray,
     MalformedName(CniValidationError),
+    MalformedVersion(CniValidationError),
 }
 
 #[derive(Debug)]
@@ -81,24 +82,26 @@ impl CniDeserializable for CniPluginList {
         let obj = json_value
             .as_object_mut()
             .ok_or(CniDeserializationError::RootIsNotObject)?;
-        let cni_version = obj
+        let cni_version: CniVersion = obj
             .remove("cniVersion")
             .ok_or(CniDeserializationError::MissingKey)?
             .as_str()
             .ok_or(CniDeserializationError::KeyOfWrongType)?
-            .to_string();
+            .try_into()
+            .map_err(CniDeserializationError::MalformedVersion)?;
         let cni_versions = match obj.remove("cniVersions") {
             Some(list) => {
-                let parsed_list = list
-                    .as_array()
-                    .ok_or(CniDeserializationError::KeyOfWrongType)?
-                    .iter()
-                    .map(|val| {
-                        val.as_str()
-                            .expect("CNI version inside list was not a string")
-                            .to_string()
-                    })
-                    .collect::<Vec<_>>();
+                let list = list.as_array().ok_or(CniDeserializationError::KeyOfWrongType)?;
+                let mut parsed_list: Vec<CniVersion> = Vec::with_capacity(list.len());
+                for list_value in list {
+                    parsed_list.push(
+                        list_value
+                            .as_str()
+                            .ok_or(CniDeserializationError::KeyOfWrongType)?
+                            .try_into()
+                            .map_err(CniDeserializationError::MalformedVersion)?,
+                    );
+                }
                 if parsed_list.is_empty() {
                     return Err(CniDeserializationError::EmptyArray);
                 }
@@ -198,11 +201,11 @@ impl CniSerializable for CniPluginList {
     fn to_json_value(self) -> Result<Value, CniSerializationError> {
         let mut map = Map::new();
 
-        map.insert("cniVersion".into(), Value::String(self.cni_version));
+        map.insert("cniVersion".into(), Value::String(self.cni_version.into()));
         if let Some(cni_versions) = self.cni_versions {
             map.insert(
                 "cniVersions".into(),
-                Value::Array(cni_versions.into_iter().map(|v| Value::String(v)).collect()),
+                Value::Array(cni_versions.into_iter().map(|v| Value::String(v.into())).collect()),
             );
         }
 

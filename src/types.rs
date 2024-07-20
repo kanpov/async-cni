@@ -1,4 +1,4 @@
-use std::{net::IpAddr, vec};
+use std::{net::IpAddr, str::FromStr, vec};
 
 use cidr::IpInet;
 use serde::{Deserialize, Serialize};
@@ -16,10 +16,13 @@ pub enum CniOperation {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachment {
     #[serde(rename = "cniVersion")]
-    pub cni_version: String,
-    pub interfaces: Option<Vec<CniAttachmentInterface>>,
-    pub ips: Option<Vec<CniAttachmentIp>>,
-    pub routes: Option<Vec<CniAttachmentRoute>>,
+    pub cni_version: CniVersion,
+    #[serde(default)]
+    pub interfaces: Vec<CniAttachmentInterface>,
+    #[serde(default)]
+    pub ips: Vec<CniAttachmentIp>,
+    #[serde(default)]
+    pub routes: Vec<CniAttachmentRoute>,
     pub dns: Option<CniAttachmentDns>,
 }
 
@@ -45,28 +48,31 @@ pub struct CniAttachmentIp {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentRoute {
     pub dst: IpInet,
-    pub gw: IpAddr,
-    pub mtu: u32,
-    pub advmss: u32,
-    pub priority: u32,
-    pub table: u32,
-    pub scope: u32,
+    pub gw: Option<IpAddr>,
+    pub mtu: Option<u32>,
+    pub advmss: Option<u32>,
+    pub priority: Option<u32>,
+    pub table: Option<u32>,
+    pub scope: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentDns {
-    pub nameservers: Option<Vec<String>>,
+    #[serde(default)]
+    pub nameservers: Vec<String>,
     pub domain: Option<String>,
-    pub search: Option<Vec<String>>,
-    pub options: Option<Vec<String>>,
+    #[serde(default)]
+    pub search: Vec<String>,
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniVersionObject {
     #[serde(rename = "cniVersion")]
-    pub cni_version: String,
+    pub cni_version: CniVersion,
     #[serde(rename = "supportedVersions")]
-    pub supported_versions: Vec<String>,
+    pub supported_versions: Vec<CniVersion>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -78,13 +84,16 @@ pub struct CniError {
     pub details: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CniValidationError {
     IsEmptyOrBlank,
     FirstIsNotAlphabetic,
     ContainsForbiddenCharacter,
     TooLong { maximum_allowed: usize },
-    IsInvalidValue,
+    IsForbiddenValue,
+    IncorrectSplitAmount,
+    SplitMissing,
+    SplitNotParseable(<u8 as FromStr>::Err),
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
@@ -186,7 +195,7 @@ impl CniInterfaceName {
             });
         }
         if interface_name == "." || interface_name == ".." {
-            return Err(CniValidationError::IsInvalidValue);
+            return Err(CniValidationError::IsForbiddenValue);
         }
 
         let forbidden_chars = vec![' ', ':', '/'];
@@ -212,4 +221,50 @@ impl From<CniInterfaceName> for String {
     fn from(value: CniInterfaceName) -> Self {
         value.0
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CniVersion(String);
+
+impl CniVersion {
+    fn new(major: u8, minor: u8, patch: u8) -> CniVersion {
+        CniVersion(format!("{major}.{minor}.{patch}"))
+    }
+}
+
+impl AsRef<str> for CniVersion {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<CniVersion> for String {
+    fn from(value: CniVersion) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<&str> for CniVersion {
+    type Error = CniValidationError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let splits = value.split('.').collect::<Vec<_>>();
+        if splits.len() != 3 {
+            return Err(CniValidationError::IncorrectSplitAmount);
+        }
+
+        let major = parse_split(&splits, 0)?;
+        let minor = parse_split(&splits, 1)?;
+        let patch = parse_split(&splits, 2)?;
+
+        Ok(CniVersion::new(major, minor, patch))
+    }
+}
+
+fn parse_split(splits: &Vec<&str>, index: usize) -> Result<u8, CniValidationError> {
+    splits
+        .get(index)
+        .ok_or(CniValidationError::SplitMissing)?
+        .parse()
+        .map_err(CniValidationError::SplitNotParseable)
 }

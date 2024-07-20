@@ -12,7 +12,10 @@ use tokio::{
 
 use crate::{
     plugins::{CniPlugin, CniPluginList},
-    types::{CniAttachment, CniContainerId, CniError, CniInterfaceName, CniName, CniValidAttachment, CniVersionObject},
+    types::{
+        CniAttachment, CniContainerId, CniError, CniInterfaceName, CniName, CniValidAttachment, CniVersion,
+        CniVersionObject,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +41,7 @@ pub struct CniInvocationArguments {
     pub(crate) paths: Option<Vec<PathBuf>>,
     pub(crate) attachment: Option<CniAttachment>,
     pub(crate) valid_attachments: Option<Vec<CniValidAttachment>>,
-    pub(crate) cni_version: Option<String>,
+    pub(crate) cni_version: Option<CniVersion>,
 }
 
 impl CniInvocationArguments {
@@ -84,8 +87,8 @@ impl CniInvocationArguments {
         self
     }
 
-    pub fn cni_version(&mut self, cni_version: impl Into<String>) -> &mut Self {
-        self.cni_version = Some(cni_version.into());
+    pub fn cni_version(&mut self, cni_version: CniVersion) -> &mut Self {
+        self.cni_version = Some(cni_version);
         self
     }
 }
@@ -95,7 +98,7 @@ pub enum CniInvocationTarget<'a> {
     Plugin {
         plugin: &'a CniPlugin,
         name: CniName,
-        cni_version: String,
+        cni_version: CniVersion,
     },
     PluginList(&'a CniPluginList),
 }

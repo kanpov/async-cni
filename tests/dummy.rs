@@ -27,7 +27,7 @@ async fn t() {
         .container_id(CniContainerId::new("fcnet").unwrap())
         .net_ns("/var/run/netns/testing")
         .interface_name(CniInterfaceName::new("eth0").unwrap())
-        .paths(vec![PathBuf::from("/usr/libexec/cni")]);
+        .paths(vec!["/usr/libexec/cni"]);
 
     let add_inv = invoke(CniOperation::Add, &arguments, &invocation_target, &invoker, &locator)
         .await

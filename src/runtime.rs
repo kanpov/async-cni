@@ -191,7 +191,7 @@ fn derive_stdin(
     if let Some(new_cni_version) = &arguments.cni_version {
         cni_version = new_cni_version.clone();
     }
-    map.insert("cniVersion".into(), Value::String(cni_version));
+    map.insert("cniVersion".into(), Value::String(cni_version.as_ref().to_owned()));
 
     // capabilities as runtimeConfig
     if let Some(capabilities) = &plugin.capabilities {
