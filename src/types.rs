@@ -59,7 +59,7 @@ pub struct CniAttachmentRoute {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CniAttachmentDns {
     #[serde(default)]
-    pub nameservers: Vec<String>,
+    pub nameservers: Vec<IpAddr>,
     pub domain: Option<String>,
     #[serde(default)]
     pub search: Vec<String>,

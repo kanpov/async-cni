@@ -227,56 +227,6 @@ impl CniInvoker for SuCniInvoker {
     }
 }
 
-pub struct SudoCniInvoker {
-    pub sudo_path: PathBuf,
-    pub password: Option<String>,
-}
-
-#[async_trait]
-impl CniInvoker for SudoCniInvoker {
-    async fn invoke(
-        &self,
-        program: &Path,
-        environment: HashMap<String, String>,
-        stdin: String,
-    ) -> Result<String, io::Error> {
-        let full_command = build_env_string(environment) + program.to_string_lossy().to_string().as_str();
-        let mut command = Command::new(self.sudo_path.as_os_str());
-        command
-            .stdout(Stdio::piped())
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .arg("-S");
-
-        for component in full_command.split(' ') {
-            command.arg(component);
-        }
-
-        let mut child = command.spawn()?;
-        let mut child_stdin = child.stdin.take().ok_or_else(|| io::Error::other("Stdin not found"))?;
-
-        if let Some(password) = &self.password {
-            child_stdin.write_all((password.to_string() + "\n").as_bytes()).await?;
-        }
-
-        child_stdin.write_all(stdin.as_bytes()).await?;
-        drop(child_stdin); // EOF
-
-        let output = child.wait_with_output().await?;
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-
-        if stderr.contains("Sorry, try again") {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Sudo rejected the given password",
-            ));
-        }
-
-        Ok(stdout)
-    }
-}
-
 fn build_env_string(environment: HashMap<String, String>) -> String {
     let mut env_string = String::new();
     for (key, value) in environment {

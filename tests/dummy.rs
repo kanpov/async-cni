@@ -15,7 +15,7 @@ async fn t() {
     };
     let invoker = SuCniInvoker {
         su_path: PathBuf::from("/usr/bin/su"),
-        password: "495762".into(),
+        password: "495762".to_owned(),
     };
     let plugin_list = CniPluginList::from_file(PathBuf::from("/home/kanpov/Documents/test.conflist"))
         .await
