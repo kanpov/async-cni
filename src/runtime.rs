@@ -42,6 +42,7 @@ pub async fn invoke(
             let plugin_iter = match invocation {
                 CniInvocation::Delete {
                     container_id: _,
+                    net_ns: _,
                     interface_name: _,
                     attachment: _,
                     paths: _,
@@ -114,7 +115,6 @@ async fn invoke_plugin(
 
     let previous_attachment = overrides.attachment.as_ref().or(invocation_output.attachment.as_ref());
     let stdin = derive_stdin(plugin, &overrides, invocation_target, previous_attachment)?;
-    dbg!(&stdin);
     let cni_output = invoker
         .invoke(&location, environment, stdin)
         .await
@@ -130,15 +130,15 @@ fn add_to_invocation_output(
     plugin: &CniPlugin,
     invocation_output: &mut CniInvocationResult,
 ) -> Result<(), CniInvocationError> {
-    if let Ok(attachment) = serde_json::from_str::<CniAttachment>(&cni_output) {
-        invocation_output.attachment = Some(attachment);
-        return Ok(());
-    }
-
     if let Ok(version_object) = serde_json::from_str::<CniVersionObject>(&cni_output) {
         invocation_output
             .version_objects
             .insert(plugin.plugin_type.clone(), version_object);
+        return Ok(());
+    }
+
+    if let Ok(attachment) = serde_json::from_str::<CniAttachment>(&cni_output) {
+        invocation_output.attachment = Some(attachment);
         return Ok(());
     }
 
@@ -231,6 +231,7 @@ impl AsRef<str> for CniInvocation {
             } => "ADD",
             CniInvocation::Delete {
                 container_id: _,
+                net_ns: _,
                 interface_name: _,
                 attachment: _,
                 paths: _,
@@ -270,12 +271,14 @@ impl From<CniInvocation> for CniInvocationOverrides {
             }
             CniInvocation::Delete {
                 container_id,
+                net_ns,
                 interface_name,
                 attachment,
                 paths,
             } => {
                 builder
                     .container_id(container_id)
+                    .net_ns(net_ns)
                     .interface_name(interface_name)
                     .attachment(attachment)
                     .paths(paths);

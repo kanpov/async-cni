@@ -40,20 +40,29 @@ async fn t() {
     .unwrap();
     dbg!(&add_inv);
 
-    for _ in 1..=1 {
-        let _del_inv = invoke(
-            CniInvocation::Delete {
-                container_id: CniContainerId::new("fcnet").unwrap(),
-                interface_name: CniInterfaceName::new("eth0").unwrap(),
-                attachment: add_inv.attachment.clone().unwrap(),
-                paths: vec![PathBuf::from("/usr/libexec/cni")],
-            },
-            &invocation_overrides,
-            &invocation_target,
-            &invoker,
-            &locator,
-        )
-        .await
-        .unwrap();
-    }
+    let _del_inv = dbg!(invoke(
+        CniInvocation::Delete {
+            container_id: CniContainerId::new("fcnet").unwrap(),
+            net_ns: "/var/run/netns/testing".into(),
+            interface_name: CniInterfaceName::new("eth0").unwrap(),
+            attachment: add_inv.attachment.unwrap(),
+            paths: vec![PathBuf::from("/usr/libexec/cni")],
+        },
+        &invocation_overrides,
+        &invocation_target,
+        &invoker,
+        &locator,
+    )
+    .await
+    .unwrap());
+
+    dbg!(invoke(
+        CniInvocation::Version,
+        &invocation_overrides,
+        &invocation_target,
+        &invoker,
+        &locator
+    )
+    .await
+    .unwrap());
 }

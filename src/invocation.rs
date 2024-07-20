@@ -40,6 +40,7 @@ pub enum CniInvocation {
     },
     Delete {
         container_id: CniContainerId,
+        net_ns: String,
         interface_name: CniInterfaceName,
         attachment: CniAttachment,
         paths: Vec<PathBuf>,
@@ -60,13 +61,13 @@ pub enum CniInvocation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CniInvocationOverrides {
-    pub container_id: Option<CniContainerId>,
-    pub net_ns: Option<String>,
-    pub interface_name: Option<CniInterfaceName>,
-    pub paths: Option<Vec<PathBuf>>,
-    pub attachment: Option<CniAttachment>,
-    pub valid_attachments: Option<Vec<CniValidAttachment>>,
-    pub cni_version: Option<String>,
+    pub(crate) container_id: Option<CniContainerId>,
+    pub(crate) net_ns: Option<String>,
+    pub(crate) interface_name: Option<CniInterfaceName>,
+    pub(crate) paths: Option<Vec<PathBuf>>,
+    pub(crate) attachment: Option<CniAttachment>,
+    pub(crate) valid_attachments: Option<Vec<CniValidAttachment>>,
+    pub(crate) cni_version: Option<String>,
 }
 
 impl CniInvocationOverrides {
@@ -87,8 +88,8 @@ impl CniInvocationOverrides {
         self
     }
 
-    pub fn net_ns(&mut self, net_ns: String) -> &mut Self {
-        self.net_ns = Some(net_ns);
+    pub fn net_ns(&mut self, net_ns: impl Into<String>) -> &mut Self {
+        self.net_ns = Some(net_ns.into());
         self
     }
 
@@ -97,8 +98,8 @@ impl CniInvocationOverrides {
         self
     }
 
-    pub fn paths(&mut self, paths: Vec<PathBuf>) -> &mut Self {
-        self.paths = Some(paths);
+    pub fn paths<P: Into<PathBuf>>(&mut self, paths: Vec<P>) -> &mut Self {
+        self.paths = Some(paths.into_iter().map(|p| p.into()).collect());
         self
     }
 
@@ -112,8 +113,8 @@ impl CniInvocationOverrides {
         self
     }
 
-    pub fn cni_version(&mut self, cni_version: String) -> &mut Self {
-        self.cni_version = Some(cni_version);
+    pub fn cni_version(&mut self, cni_version: impl Into<String>) -> &mut Self {
+        self.cni_version = Some(cni_version.into());
         self
     }
 }

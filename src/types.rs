@@ -10,6 +10,7 @@ pub struct CniAttachment {
     pub interfaces: Option<Vec<CniAttachmentInterface>>,
     pub ips: Option<Vec<CniAttachmentIp>>,
     pub routes: Option<Vec<CniAttachmentRoute>>,
+    pub dns: Option<CniAttachmentDns>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
